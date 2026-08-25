@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="LAS CAFE">
+  <defs>
+    <linearGradient id="las-g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#003b49"/>
+      <stop offset="100%" stop-color="#00566a"/>
+    </linearGradient>
+  </defs>
+  <rect width="120" height="120" rx="18" fill="#f8f7f5"/>
+  <circle cx="60" cy="58" r="34" fill="none" stroke="url(#las-g)" stroke-width="3"/>
+  <path d="M44 62c0-8 7-14 16-14s16 6 16 14" fill="none" stroke="#c68e65" stroke-width="3" stroke-linecap="round"/>
+  <path d="M38 72h44" stroke="#003b49" stroke-width="2.5" stroke-linecap="round"/>
+  <text x="60" y="98" text-anchor="middle" font-family="Georgia, serif" font-size="14" font-weight="600" fill="#003b49" letter-spacing="3">LAS</text>
+</svg>
