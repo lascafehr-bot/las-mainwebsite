@@ -12,9 +12,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/main.css?v=25" />
-  <script src="js/config.js?v=7"></script>
-  <script src="js/i18n.js?v=7"></script>
+  <link rel="stylesheet" href="css/main.css?v=33" />
+  <script src="js/config.js?v=9"></script>
+  <script src="js/i18n.js?v=11"></script>
 </head>
 <body data-page-title="page.title">
 
@@ -86,6 +86,9 @@
 <div class="menu-backdrop" id="nav-backdrop"></div>
 <aside class="side-menu" id="side-menu" aria-hidden="true">
   <button type="button" class="side-menu-close" id="nav-close">×</button>
+  <a href="#home" class="side-menu-brand" dir="ltr" aria-label="LAS CAFE">
+    <span class="brand-word">LAS</span><span class="brand-deg">CAFE</span>
+  </a>
   <nav class="side-menu-nav" id="side-menu-nav" aria-label="Page sections"></nav>
 </aside>
 
@@ -139,15 +142,18 @@
 
   <section id="locations" class="page-section page-section--locations" aria-labelledby="locations-heading">
     <h2 id="locations-heading" class="section-heading" data-i18n="nav.locations">Locations</h2>
-    <div class="locations-inner" id="locations-grid"></div>
+    <div class="locations-board" id="locations-grid"></div>
   </section>
 </main>
 
 <footer id="contact" class="page-section page-section--contact site-footer" aria-labelledby="contact-heading">
   <h2 id="contact-heading" class="visually-hidden" data-i18n="nav.contact">Contact Us</h2>
   <div class="footer-social">
-    <a href="https://instagram.com/lascafe.sa" target="_blank" rel="noopener" aria-label="Instagram">
+    <a href="https://www.instagram.com/las_cafe0" target="_blank" rel="noopener" aria-label="Instagram">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="5" stroke="currentColor"/><circle cx="12" cy="12" r="4" stroke="currentColor"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor"/></svg>
+    </a>
+    <a href="https://www.tiktok.com/@las_cafe" target="_blank" rel="noopener" aria-label="TikTok">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M14.5 4c.6 2.4 2.2 4 4.5 4.4v3.1c-1.6 0-3.1-.5-4.4-1.4v6.6A5.7 5.7 0 1 1 11 11.1v3.2a2.6 2.6 0 1 0 1.8 2.5V4h1.7z" fill="currentColor"/></svg>
     </a>
   </div>
   <ul class="footer-links">
@@ -157,7 +163,17 @@
     <li><a href="#catering" data-i18n="footer.catering">Catering</a></li>
     <li><a href="#locations" data-i18n="footer.locations">Locations</a></li>
     <li><a href="#contact" data-i18n="footer.contact">Contact Us</a></li>
-    <li><a href="#" data-i18n="footer.terms">T&amp;C's</a></li>
+    <li class="footer-terms" id="terms">
+      <button type="button" class="terms-toggle" id="terms-toggle" aria-expanded="false" aria-controls="terms-panel">
+        <span data-i18n="footer.terms">الشروط والأحكام</span>
+        <svg class="terms-arrow" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <div class="terms-panel" id="terms-panel" hidden>
+        <div class="terms-board" id="terms-board"></div>
+      </div>
+    </li>
   </ul>
   <p class="footer-copy">
     © <span id="year"></span> <strong>LAS</strong> CAFE — <span data-i18n="footer.tagline">Specialty cafe & roastery</span>
@@ -175,6 +191,7 @@
 <script>
   document.getElementById("year").textContent = new Date().getFullYear();
 </script>
-<script src="js/main.js?v=8"></script>
+<div class="coming-soon-toast" id="coming-soon-toast" role="status" aria-live="polite"></div>
+<script src="js/main.js?v=14"></script>
 </body>
 </html>
