@@ -1085,3 +1085,19 @@ textarea,
     font-size: 2rem;
   }
 }
+
+/* ── Poster-style hero banner (text is baked into the image) ── */
+.hero-banner {
+  background: linear-gradient(#3d4a70 0 46.6%, #faf6ee 46.6% 100%);
+}
+
+.hero-slide-img {
+  filter: none !important;
+  object-position: center top;
+}
+
+.hero-content { display: none; }
+
+@media (min-aspect-ratio: 3/4) {
+  .hero-slide-img { object-fit: contain; }
+}

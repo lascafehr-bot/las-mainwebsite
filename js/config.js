@@ -48,6 +48,6 @@ window.LAS_MAIN_CONFIG = {
     },
   ],
   heroSlides: [
-    { image: "media/hero-coffee.png", theme: "dark" },
+    { image: "media/hero-banner.jpg", theme: "light" },
   ],
 };
