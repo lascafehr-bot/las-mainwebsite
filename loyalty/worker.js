@@ -279,14 +279,14 @@ export default {
 };
 
 // ---------- pages ----------
-const LOGO = String.raw`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="LAS CAFE"><defs><linearGradient id="lg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#003b49"/><stop offset="100%" stop-color="#00566a"/></linearGradient></defs><rect width="120" height="120" rx="18" fill="#f8f7f5"/><circle cx="60" cy="58" r="34" fill="none" stroke="url(#lg)" stroke-width="3"/><path d="M44 62c0-8 7-14 16-14s16 6 16 14" fill="none" stroke="#c68e65" stroke-width="3" stroke-linecap="round"/><path d="M38 72h44" stroke="#003b49" stroke-width="2.5" stroke-linecap="round"/><text x="60" y="98" text-anchor="middle" font-family="Georgia, serif" font-size="14" font-weight="600" fill="#003b49" letter-spacing="3">LAS</text></svg>`;
+const LOGO = String.raw`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 64" role="img" aria-label="LAS CAFE" fill="currentColor"><text x="60" y="38" text-anchor="middle" font-family="Georgia,serif" font-size="38" letter-spacing="5">LAS</text><text x="60" y="58" text-anchor="middle" font-family="Georgia,serif" font-size="14" letter-spacing="6">CAFE</text></svg>`;
 
 const CSS = String.raw`
-:root{--teal:#003b49;--teal2:#00566a;--sand:#f8f7f5;--copper:#c68e65;--ink:#16262b;--mut:#6a7a80;--line:#e3e0da;--ok:#1b7f4b;--bad:#b3261e}
+:root{--teal:#3d4864;--teal2:#4a5778;--sand:#f8f4ec;--copper:#a58670;--ink:#232b3d;--mut:#6f7686;--line:#e6dfd3;--ok:#1b7f4b;--bad:#b3261e}
 *{box-sizing:border-box}body{margin:0;background:var(--sand);color:var(--ink);font-family:"IBM Plex Sans Arabic","Segoe UI",Tahoma,sans-serif;line-height:1.5}
 .wrap{max-width:460px;margin:0 auto;padding:16px}.wide{max-width:1000px}
 header.top{display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--teal);color:#fff}
-header.top svg{width:36px;height:36px;border-radius:8px}header.top b{flex:1}
+header.top svg{width:62px;height:33px}header.top b{flex:1}
 header.top button{background:transparent;border:1px solid #fff6;color:#fff;border-radius:8px;padding:4px 10px;font:inherit;cursor:pointer}
 h2{font-size:1.05rem;margin:0 0 10px}
 .box{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
@@ -297,15 +297,28 @@ button.pri{width:100%;margin-top:10px;padding:12px;border:0;border-radius:10px;b
 button.pri:disabled{opacity:.5}button.alt{background:var(--copper)}
 .msg{padding:10px;border-radius:10px;margin:10px 0;font-size:.95rem}.msg.ok{background:#e6f4ec;color:var(--ok)}.msg.err{background:#fbe9e7;color:var(--bad)}
 .hide{display:none}
-.card{background:linear-gradient(145deg,var(--teal),var(--teal2));color:#fff;border-radius:20px;padding:18px;box-shadow:0 8px 24px #003b4933}
-.card .hd{display:flex;align-items:center;gap:10px}.card .hd svg{width:44px;height:44px;border-radius:10px}.card .hd small{opacity:.8;display:block}
-.card .nm{font-size:1.4rem;font-weight:700;margin:12px 0 4px}
+.card{--bg:#3d4864;--fg:#f8f4ec;--mo:#a58670;background:var(--bg);color:var(--fg);border-radius:20px;padding:16px 18px;box-shadow:0 8px 24px #3d486433;transition:background .6s,color .6s}
+.card.done{--bg:#f8f4ec;--fg:#3d4864;border:1px solid var(--mo)}
+.card .hd{display:flex;align-items:center;justify-content:space-between}.card .hd svg{width:64px;height:34px}.card .hd small{color:var(--mo)}
+.card .mid{display:flex;align-items:center;gap:6px;margin:4px 0}.card .mid svg.v60{width:178px;height:176px;flex:none;overflow:visible}
+.card .info{flex:1;text-align:center}.card .big{font-size:2.8rem;font-weight:600;line-height:1}.card .big span{font-size:1.2rem;color:var(--mo)}
+.card .lbl{color:var(--mo);font-size:.8rem}.card .left{font-size:.95rem;margin-top:8px}
+.card .band{background:var(--mo);color:#f8f4ec;border-radius:10px;padding:8px;font-weight:600;margin-top:8px}
+.card .row{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;border-top:1px solid #a5867066;padding-top:10px}
+.card .nm{font-size:1.1rem;font-weight:600}.card .pts b{font-size:1.1rem}
+.card .qr{background:#f8f4ec;border-radius:10px;padding:6px;width:84px;flex:none;margin:0}.card.done .qr{background:#fff;border:1px solid var(--mo)}
+.card .qr small{font-size:9px;color:#3d4864}
+.v60 .wave{animation:wv 3s linear infinite}.v60 .lvl{transition:transform 1.6s cubic-bezier(.3,1.2,.4,1)}
+.v60 .drop{animation:dp 1.8s ease-in infinite;opacity:0}.v60 .drop.d2{animation-delay:.9s}
+.v60 .steam{animation:st 3s ease-in-out infinite;opacity:0}.v60 .steam.s2{animation-delay:1s}.v60 .steam.s3{animation-delay:2s}
+@keyframes wv{to{transform:translateX(-48px)}}
+@keyframes dp{0%{transform:translateY(0);opacity:0}15%{opacity:1}85%{opacity:1}100%{transform:translateY(var(--fall,40px));opacity:0}}
+@keyframes st{0%{transform:translateY(0);opacity:0}30%{opacity:.8}100%{transform:translateY(-16px);opacity:0}}
+@media (prefers-reduced-motion:reduce){.v60 *{animation:none!important;transition:none!important}.v60 .steam{opacity:.7}}
 .cups{display:flex;gap:6px;justify-content:center;margin:14px 0;flex-wrap:wrap}
 .cup{width:52px;height:52px;border-radius:50%;background:#ffffff1f;display:flex;align-items:center;justify-content:center}
 .cup{color:#ffffffaa}.box .cup{background:#eef2f3;color:#9aa8ad}.box .cup.on{background:var(--copper);color:#fff}.cup svg{width:30px;height:30px}.cup.on{background:var(--copper)}.cup.gift{background:#fff;border:2px dashed var(--copper)}
-.stats{display:flex;gap:8px}.stats div{flex:1;background:#ffffff1f;border-radius:12px;padding:8px;text-align:center}.stats b{display:block;font-size:1.3rem}.stats small{opacity:.85}
-.qr{background:#fff;border-radius:14px;padding:12px;margin:14px auto 0;width:170px;text-align:center;color:var(--ink)}.qr svg{width:100%;height:auto;display:block}.qr small{font-family:monospace;display:block;margin-top:4px}
-.free{background:var(--copper);border-radius:12px;padding:8px;text-align:center;font-weight:700;margin-top:10px}
+.qr{text-align:center}.qr svg{width:100%;height:auto;display:block}.qr small{font-family:monospace;display:block;margin-top:2px}
 .who{display:flex;justify-content:space-between;align-items:center}.who b{font-size:1.15rem}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.stat{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px}.stat b{font-size:1.6rem;display:block;color:var(--teal)}
 table{width:100%;border-collapse:collapse;font-size:.88rem}th,td{padding:7px 6px;text-align:start;border-bottom:1px solid var(--line)}.scroll{overflow-x:auto}
@@ -327,16 +340,32 @@ const head = (title) => `<!doctype html><html lang="ar" dir="rtl"><head><meta ch
 const QR_LIB = '<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>';
 
 function customerPage() {
-  return head('بطاقة ولاء لاس') + `<header class="top">${LOGO}<b>لاس كافيه · بطاقة الولاء</b></header><div class="wrap">
+  return head('بطاقة ولاء لاس') + `<div class="wrap">
 <div id="lookup" class="box"><h2>تحقق من بطاقتك</h2><label>رقم الجوال</label><input id="ph" class="num" inputmode="tel" placeholder="05XXXXXXXX" autocomplete="tel"><button class="pri" id="go">عرض البطاقة</button><div id="err" class="msg err hide"></div></div>
 <div id="out"></div></div>${QR_LIB}<script>${CUP_JS}
+function v60(f,done,total){
+ var body='M40 78H128V136a28 28 0 0 1-28 28H68a28 28 0 0 1-28-28Z',surf=82+(1-f)*86,fall=Math.max(0,Math.round(surf-92));
+ var s='<svg class="v60" viewBox="0 0 178 176" role="img" aria-label="'+Math.round(f*total)+' / '+total+'" style="--fall:'+fall+'px"><defs><clipPath id="cl"><path d="'+body+'"/></clipPath></defs>';
+ s+='<path d="'+body+'" fill="#a5867014" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M128 92h8a16 16 0 0 1 0 38h-8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>';
+ s+='<g clip-path="url(#cl)"><g class="lvl" style="transform:translateY(86px)"><rect x="30" y="85" width="110" height="90" fill="#a58670"/><path class="wave" d="M-24 82q12-5 24 0t24 0t24 0t24 0t24 0t24 0t24 0t24 0t24 0t24 0V92H-24Z" fill="#a58670"/></g></g>';
+ s+='<text x="84" y="154" text-anchor="middle" font-family="Georgia,serif" font-size="16" letter-spacing="4" fill="currentColor" opacity=".9">LAS</text>';
+ for(var i=1;i<=total;i++){var y=164-i*(82/total);s+='<line x1="40" y1="'+y+'" x2="47" y2="'+y+'" stroke="currentColor" stroke-opacity=".7"/><text x="32" y="'+(y+4)+'" text-anchor="end" font-size="11" fill="#a58670">'+i+'</text>'}
+ s+='<path d="M34 18H134L102 70V84H66V70Z" fill="#a5867033" stroke="#a58670" stroke-width="2" stroke-linejoin="round"/>';
+ [[54,73],[74,80],[94,88],[114,95]].forEach(function(p){s+='<line x1="'+p[0]+'" y1="22" x2="'+p[1]+'" y2="68" stroke="#a58670" stroke-opacity=".6"/>'});
+ s+='<rect x="28" y="13" width="112" height="7" rx="3.5" fill="#a58670"/>';
+ if(!done)s+='<circle class="drop" cx="84" cy="88" r="2.8" fill="#a58670"/><circle class="drop d2" cx="84" cy="88" r="2.8" fill="#a58670"/>';
+ else s+='<g fill="none" stroke="#a58670" stroke-width="2" stroke-linecap="round"><path class="steam" d="M70 10q-5-5 0-10t0-9"/><path class="steam s2" d="M84 10q-5-5 0-10t0-9"/><path class="steam s3" d="M98 10q-5-5 0-10t0-9"/></g>';
+ return s+'</svg>'}
 function show(c){
  $('lookup').classList.add('hide');
- var h='<div class="card"><div class="hd">'+${JSON.stringify(LOGO)}+'<div><b>لاس كافيه</b><small>بطاقة الولاء</small></div></div><div class="nm">'+esc(c.name)+'</div>'
- +'<div class="cups">'+cupsHtml(c.cups,c.cups_per_reward)+'</div>'
- +'<div class="stats"><div><b>'+c.cups+' / '+c.cups_per_reward+'</b><small>الأكواب</small></div><div><b>'+c.points+'</b><small>النقاط</small></div><div><b>'+c.free_drinks+'</b><small>مشروب مجاني</small></div></div>'
- +(c.free_drinks?'<div class="free">🎉 لديك مشروب مجاني! أخبر الكاشير</div>':'<div style="text-align:center;margin-top:10px;opacity:.9">باقي '+(c.cups_per_reward-c.cups)+' أكواب للمشروب المجاني</div>')
- +'<div class="qr">'+qrSvg(c.card_code)+'<small>'+esc(c.card_code)+'</small></div></div>';
+ var f=Math.min(1,c.cups/c.cups_per_reward),done=c.free_drinks>0,rem=c.cups_per_reward-c.cups;
+ var left=rem===1?'باقي ختم واحد وتاخذ مشروبك المجاني':rem===2?'باقي ختمان وتاخذ مشروبك المجاني':'باقي '+rem+' أختام وتاخذ مشروبك المجاني';
+ var h='<div class="card'+(done?' done':'')+'"><div class="hd">'+${JSON.stringify(LOGO)}+'<small>بطاقة الولاء</small></div>'
+ +'<div class="mid">'+v60(f,done,c.cups_per_reward)+'<div class="info"><div class="big">'+c.cups+'<span> / '+c.cups_per_reward+'</span></div><div class="lbl">الأختام</div>'
+ +(done?'<div class="band">مشروبك القادم علينا</div>':'<div class="left">'+left+'</div>')+'</div></div>'
+ +'<div class="row"><div><div class="lbl">الاسم</div><div class="nm">'+esc(c.name)+'</div><div class="lbl" style="margin-top:6px">النقاط <b style="color:var(--fg);font-size:1.1rem">'+c.points+'</b></div></div>'
+ +'<div class="qr">'+qrSvg(c.card_code)+'<small>'+esc(c.card_code)+'</small></div></div></div>';
+ setTimeout(function(){var l=document.querySelector('.v60 .lvl');if(l)l.style.transform='translateY('+((1-f)*86)+'px)'},150);
  var w='';if(c.wallet_apple_url)w+='<a class="pri" style="display:block;text-align:center;text-decoration:none;margin-top:10px;padding:12px;border-radius:10px;background:#000;color:#fff" href="'+esc(c.wallet_apple_url)+'">إضافة إلى Apple Wallet</a>';
  if(c.wallet_google_url)w+='<a class="pri" style="display:block;text-align:center;text-decoration:none;margin-top:10px;padding:12px;border-radius:10px;background:#1a73e8;color:#fff" href="'+esc(c.wallet_google_url)+'">إضافة إلى Google Wallet</a>';
  $('out').innerHTML=h+w+'<p style="text-align:center"><a href="/card">بحث برقم آخر</a></p>';
@@ -391,7 +420,7 @@ function adminPage() {
  <div class="box"><h2>الموظفون</h2><div class="scroll"><table id="stf"></table></div>
   <label>اسم موظف جديد</label><input id="sn"><label>الفرع</label><select id="sb"></select><label>الرقم السري (4-8 أرقام)</label><input id="sp" class="num" inputmode="numeric"><button class="pri" id="sa">إضافة موظف</button><div id="smsg" class="msg hide"></div></div>
  <div class="box"><h2>الإعدادات</h2><div id="set"></div></div>
- <div class="box" style="text-align:center"><h2>QR الطاولة (صفحة البطاقة)</h2><div class="qr" style="color:var(--ink)" id="tq"></div><small class="ltr" id="tu"></small></div>
+ <div class="box" style="text-align:center"><h2>QR الطاولة (صفحة البطاقة)</h2><div class="qr" style="width:170px;margin:auto;background:#fff;padding:10px;border:1px solid var(--line);border-radius:10px" id="tq"></div><small class="ltr" id="tu"></small></div>
 </div></div>${QR_LIB}<script>${CUP_JS}
 var LBL={register:'تسجيل',stamp:'ختم',visit:'زيارة (بدون كوب)',redeem:'استبدال',redeem_failed:'محاولة استبدال فاشلة'};
 function fmt(ms){return new Date(ms).toLocaleString('ar-SA',{timeZone:'Asia/Riyadh',dateStyle:'short',timeStyle:'short'})}
