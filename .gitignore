@@ -16,3 +16,6 @@ Thumbs.db
 
 # Local assets (Cursor workspace)
 assets/
+
+# wrangler cache
+.wrangler/
