@@ -4,6 +4,11 @@ compatibility_date = "2025-01-01"
 workers_dev = true
 preview_urls = false
 
+[vars]
+# Google Wallet issuer ID (from Google Pay & Wallet Console). Leave empty to keep the feature off.
+GOOGLE_WALLET_ISSUER_ID = ""
+# Also needed: secret GOOGLE_SERVICE_ACCOUNT = the service-account JSON key (npx wrangler secret put GOOGLE_SERVICE_ACCOUNT)
+
 [[d1_databases]]
 binding = "DB"
 database_name = "las-loyalty"

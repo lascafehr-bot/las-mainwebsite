@@ -19,3 +19,4 @@ assets/
 
 # wrangler cache
 .wrangler/
+.dev.vars

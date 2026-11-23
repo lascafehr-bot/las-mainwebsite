@@ -2,6 +2,8 @@
 // Secret required: ADMIN_PASSWORD (also used to sign session cookies).
 // Pages: /card (customer), /c/<code>, /staff (cashier), /admin.
 
+import { WALLET_IMG } from './wallet-assets.js';
+
 const RIYADH_OFFSET = 3 * 3600 * 1000; // UTC+3, no daylight saving
 const DEFAULTS = {
   min_amount: '20',
@@ -111,8 +113,62 @@ function logTx(env, c, s, type, o = {}) {
   ).bind(c.id, type, o.amount ?? null, o.cups_after ?? c.cups, o.points_delta ?? 0, s.id ?? null, s.name, s.branch_id ?? null, s.branch_name ?? null, o.note ?? null, Date.now());
 }
 
+// ---------- Google Wallet ----------
+// Needs env.GOOGLE_WALLET_ISSUER_ID (plain var) and env.GOOGLE_SERVICE_ACCOUNT (secret: the service-account JSON key).
+// Without them the feature stays off and the button is hidden.
+const b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const b64urlStr = (s) => b64url(enc.encode(s));
+const walletReady = (env) => !!(env.GOOGLE_WALLET_ISSUER_ID && env.GOOGLE_SERVICE_ACCOUNT);
+const serviceAccount = (env) => { try { return JSON.parse(env.GOOGLE_SERVICE_ACCOUNT); } catch { return null; } };
+
+async function signJwt(sa, claims) {
+  const head = b64urlStr(JSON.stringify({ alg: 'RS256', typ: 'JWT' })), body = b64urlStr(JSON.stringify(claims));
+  const der = Uint8Array.from(atob(sa.private_key.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '')), (ch) => ch.charCodeAt(0));
+  const key = await crypto.subtle.importKey('pkcs8', der, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+  return head + '.' + body + '.' + b64url(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, enc.encode(head + '.' + body)));
+}
+
+const walletClassId = (env) => env.GOOGLE_WALLET_ISSUER_ID + '.las_loyalty_v1';
+const walletClass = (env, origin) => ({
+  id: walletClassId(env), issuerName: 'LAS CAFE', programName: 'بطاقة ولاء لاس', countryCode: 'SA', hexBackgroundColor: '#3d4864', reviewStatus: 'UNDER_REVIEW',
+  programLogo: { sourceUri: { uri: origin + '/wallet/logo.png' }, contentDescription: { defaultValue: { language: 'ar', value: 'LAS CAFE' } } },
+});
+// The parts that change with stamps. Sent in the save link and again as a PATCH on every stamp/redeem.
+const walletVariable = (c, cfg, origin) => ({
+  loyaltyPoints: { label: 'النقاط', balance: { int: c.points } },
+  secondaryLoyaltyPoints: { label: 'الأختام', balance: { string: c.cups + ' / ' + cfg.cups } },
+  heroImage: { sourceUri: { uri: origin + '/wallet/hero/' + Math.min(c.cups, 5) + '.png' }, contentDescription: { defaultValue: { language: 'ar', value: 'الأختام' } } },
+  textModulesData: [{ id: 'status', header: 'المشروب المجاني', body: c.cups >= cfg.cups ? 'جاهز! اطلب من الكاشير' : 'باقي ' + (cfg.cups - c.cups) + ' للحصول عليه' }],
+});
+const walletObjectId = (env, c) => env.GOOGLE_WALLET_ISSUER_ID + '.' + c.card_code;
+
+async function walletSaveUrl(env, c, cfg, origin) {
+  const sa = serviceAccount(env);
+  const obj = { id: walletObjectId(env, c), classId: walletClassId(env), state: 'ACTIVE', accountId: c.card_code, accountName: c.name,
+    barcode: { type: 'QR_CODE', value: c.card_code, alternateText: c.card_code }, ...walletVariable(c, cfg, origin) };
+  const jwt = await signJwt(sa, { iss: sa.client_email, aud: 'google', typ: 'savetowallet', iat: Math.floor(Date.now() / 1000), origins: [origin],
+    payload: { loyaltyClasses: [walletClass(env, origin)], loyaltyObjects: [obj] } });
+  return 'https://pay.google.com/gp/v/save/' + jwt;
+}
+
+// Best effort: if this customer saved the pass, refresh it. A 404 (never saved) or any failure is ignored.
+async function walletSync(env, c, cfg, origin) {
+  try {
+    const sa = serviceAccount(env), now = Math.floor(Date.now() / 1000);
+    const assertion = await signJwt(sa, { iss: sa.client_email, scope: 'https://www.googleapis.com/auth/wallet_object.issuer', aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 });
+    const t = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'grant_type=' + encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer') + '&assertion=' + assertion });
+    const { access_token } = await t.json();
+    if (!access_token) return;
+    await fetch('https://walletobjects.googleapis.com/walletobjects/v1/loyaltyObject/' + encodeURIComponent(walletObjectId(env, c)),
+      { method: 'PATCH', headers: { authorization: 'Bearer ' + access_token, 'content-type': 'application/json' }, body: JSON.stringify(walletVariable(c, cfg, origin)) });
+  } catch { /* ignore */ }
+}
+const syncWallet = (env, ctx, c, cfg, origin) => { if (walletReady(env) && ctx) ctx.waitUntil(walletSync(env, c, cfg, origin)); };
+const pngResponse = (b64) => new Response(Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0)), { headers: { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400' } });
+
 // ---------- API ----------
-async function api(req, env, url) {
+async function api(req, env, url, ctx) {
   const path = url.pathname;
   const method = req.method;
   const body = method === 'POST' ? await req.json().catch(() => ({})) : {};
@@ -123,7 +179,7 @@ async function api(req, env, url) {
     const c = await findCustomer(env, q);
     if (!c) return fail('لم نجد بطاقة بهذا الرقم', 404);
     const cfg = await getSettings(env);
-    return json({ ...cardView(c, cfg), name: c.name.split(' ')[0], wallet_apple_url: cfg.raw.wallet_apple_url, wallet_google_url: cfg.raw.wallet_google_url });
+    return json({ ...cardView(c, cfg), name: c.name.split(' ')[0], wallet_apple_url: cfg.raw.wallet_apple_url, wallet_google_url: cfg.raw.wallet_google_url, google_wallet: walletReady(env) });
   }
 
   // public: a customer creates their own card on /card (name + phone)
@@ -140,7 +196,7 @@ async function api(req, env, url) {
     await logTx(env, { id: r.meta.last_row_id, cups: 0 }, { name: SELF }, 'register', { note: 'تسجيل ذاتي من صفحة البطاقة' }).run();
     const cfg = await getSettings(env);
     const row = await env.DB.prepare('SELECT * FROM customers WHERE id = ?').bind(r.meta.last_row_id).first();
-    return json({ ...cardView(row, cfg), name: row.name.split(' ')[0], wallet_apple_url: cfg.raw.wallet_apple_url, wallet_google_url: cfg.raw.wallet_google_url });
+    return json({ ...cardView(row, cfg), name: row.name.split(' ')[0], wallet_apple_url: cfg.raw.wallet_apple_url, wallet_google_url: cfg.raw.wallet_google_url, google_wallet: walletReady(env) });
   }
 
   if (path === '/api/login' && method === 'POST') {
@@ -206,6 +262,7 @@ async function api(req, env, url) {
     const after = c.cups + 1;
     await logTx(env, c, s, 'stamp', { amount, cups_after: after, points_delta: cfg.points, note: after >= cfg.cups ? 'اكتملت البطاقة' : null }).run();
     const fresh = await env.DB.prepare('SELECT * FROM customers WHERE id = ?').bind(c.id).first();
+    syncWallet(env, ctx, fresh, cfg, url.origin);
     return json({ ok: true, stamped: true, reward_earned: after >= cfg.cups, card: cardView(fresh, cfg) });
   }
 
@@ -223,6 +280,7 @@ async function api(req, env, url) {
     if (up.meta.changes === 0) return fail('تم الاستبدال مسبقًا', 409);
     await logTx(env, c, s, 'redeem', { cups_after: 0, note: 'مشروب مجاني' }).run();
     const fresh = await env.DB.prepare('SELECT * FROM customers WHERE id = ?').bind(c.id).first();
+    syncWallet(env, ctx, fresh, cfg, url.origin);
     return json({ ok: true, card: cardView(fresh, cfg) });
   }
 
@@ -280,10 +338,20 @@ async function api(req, env, url) {
 }
 
 export default {
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     const url = new URL(req.url);
     try {
-      if (url.pathname.startsWith('/api/')) return await api(req, env, url);
+      if (url.pathname.startsWith('/api/')) return await api(req, env, url, ctx);
+      if (url.pathname === '/wallet/logo.png') return pngResponse(WALLET_IMG.logo);
+      const hero = url.pathname.match(/^\/wallet\/hero\/([0-5])\.png$/);
+      if (hero) return pngResponse(WALLET_IMG.hero[Number(hero[1])]);
+      const gw = url.pathname.match(/^\/wallet\/google\/(LAS-[A-Za-z0-9]+)$/);
+      if (gw) {
+        if (!walletReady(env)) return new Response('Google Wallet is not configured', { status: 404 });
+        const c = await env.DB.prepare('SELECT * FROM customers WHERE card_code = ?').bind(gw[1].toUpperCase()).first();
+        if (!c) return new Response('Card not found', { status: 404 });
+        return Response.redirect(await walletSaveUrl(env, c, await getSettings(env), url.origin), 302);
+      }
       if (url.pathname === '/' ) return Response.redirect(url.origin + '/card', 302);
       if (url.pathname === '/card' || url.pathname.startsWith('/c/')) return html(customerPage());
       if (url.pathname === '/staff') return html(staffPage());
@@ -385,7 +453,8 @@ function show(c){
  +'<div class="qr">'+qrSvg(c.card_code)+'<small>'+esc(c.card_code)+'</small></div></div></div>';
  setTimeout(function(){var l=document.querySelector('.v60 .lvl');if(l)l.style.transform='translateY('+((1-f)*86)+'px)'},150);
  var w='';if(c.wallet_apple_url)w+='<a class="pri" style="display:block;text-align:center;text-decoration:none;margin-top:10px;padding:12px;border-radius:10px;background:#000;color:#fff" href="'+esc(c.wallet_apple_url)+'">إضافة إلى Apple Wallet</a>';
- if(c.wallet_google_url)w+='<a class="pri" style="display:block;text-align:center;text-decoration:none;margin-top:10px;padding:12px;border-radius:10px;background:#1a73e8;color:#fff" href="'+esc(c.wallet_google_url)+'">إضافة إلى Google Wallet</a>';
+ var gurl=c.google_wallet?'/wallet/google/'+c.card_code:c.wallet_google_url;
+ if(gurl)w+='<a class="pri" style="display:block;text-align:center;text-decoration:none;margin-top:10px;padding:12px;border-radius:10px;background:#1a73e8;color:#fff" href="'+esc(gurl)+'">إضافة إلى Google Wallet</a>';
  $('out').innerHTML=h+w+'<p style="text-align:center"><a href="/card">بحث برقم آخر</a></p>';
 }
 async function find(q){try{show(await call('/api/public/card?'+q))}catch(e){
