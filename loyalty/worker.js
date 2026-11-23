@@ -279,14 +279,14 @@ export default {
 };
 
 // ---------- pages ----------
-const LOGO = String.raw`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 64" role="img" aria-label="LAS CAFE" fill="currentColor"><text x="60" y="38" text-anchor="middle" font-family="Georgia,serif" font-size="38" letter-spacing="5">LAS</text><text x="60" y="58" text-anchor="middle" font-family="Georgia,serif" font-size="14" letter-spacing="6">CAFE</text></svg>`;
+const LOGO = String.raw`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 863" role="img" aria-label="LAS CAFE" fill="currentColor"><path fill-rule="evenodd" d="M 1015 26.6 C 963.0 30.3, 924.6 46.6, 891.6 78.8 C 843.9 125.3, 850.2 205.2, 904.5 241.1 C 925.0 254.7, 924.9 254.7, 1023 285.0 C 1029.8 287.1, 1043.4 291.1, 1053.0 293.9 C 1077.5 300.9, 1086.7 304.2, 1100.1 311.1 C 1144.0 333.7, 1164.6 373.0, 1157.5 420.7 C 1147.7 487.3, 1108.3 512.8, 1018.6 510.7 C 971.6 509.5, 936.0 498.9, 900.9 475.4 C 884.5 464.5, 862.5 444.9, 858.1 437.5 C 857.0 435.6, 856.2 436.3, 846.5 446.5 C 840.7 452.5, 836.0 458.0, 836.0 458.6 C 835.9 460.6, 858.0 480.9, 870.6 490.3 C 906.2 517.1, 944.0 532.5, 990.5 539.1 C 1002.5 540.9, 1047.1 540.9, 1061.5 539.1 C 1110.0 533.3, 1150.3 516.9, 1181 490.7 C 1238.2 441.7, 1233.2 347.0, 1171.2 305.7 C 1145.5 288.5, 1114.4 277.0, 1045 258.9 C 1000.3 247.3, 984.2 240.1, 962.8 222.3 C 937.2 201.0, 926.7 179.6, 926.7 148.5 C 926.6 107.5, 948.0 77.2, 986.0 64.6 C 1041.4 46.1, 1107.5 59.4, 1162 99.8 L 1171.5 106.9 1175.2 102.7 C 1177.3 100.4, 1181.7 95.2, 1185.0 91.2 L 1191.0 84.0 1185.7 79.8 C 1139.5 42.9, 1073.7 22.4, 1015 26.6 M 506.6 36.2 C 505.2 37.4, 493.0 60.5, 479.4 87.5 C 465.8 114.4, 446.3 153.1, 435.9 173.5 C 398.3 247.8, 318 407.7, 318 408.3 C 318 408.7, 398.6 409.0, 497.2 409.0 C 670.1 409.0, 676.6 409.0, 679.5 410.8 C 682.5 412.7, 716.5 478.1, 728.5 505 C 734.5 518.6, 738.2 524.3, 743.7 528.5 C 750.6 533.8, 752.5 534.0, 784.4 533.2 L 813.2 532.5 799.2 505 C 791.5 489.8, 767.3 441.9, 745.5 398.5 C 723.6 355.0, 695.2 298.8, 682.4 273.5 C 669.7 248.2, 646.7 202.7, 631.4 172.5 C 616.2 142.2, 594.7 99.7, 583.7 78 C 572.8 56.2, 562.7 37.4, 561.3 36.2 C 558.9 34.0, 558.4 34, 534 34 C 509.5 34, 509.0 34.0, 506.6 36.2 M 58 284 L 58 533 234.0 533 C 351.9 533, 410.7 532.6, 412.0 531.9 C 413.0 531.4, 417.0 524.8, 420.7 517.4 L 427.6 504 277.3 504 L 127 504 127 269.5 L 127 35 92.5 35 L 58 35 58 284 M 440.1 230.7 C 398.7 313.6, 364.9 381.8, 364.9 382.2 C 364.9 382.6, 432.7 383, 515.5 383 L 666.1 383 665.4 380.8 C 664.6 378.3, 516.2 80, 515.8 80 C 515.6 80, 481.6 147.8, 440.1 230.7 M 370.2 633.9 C 332.5 639.3, 300.4 667.5, 290.8 704 C 287.6 716.1, 287.6 736.8, 290.7 749.3 C 299.1 782.3, 323.3 807.5, 356.5 817.6 C 364.7 820.1, 366.9 820.3, 382.5 820.4 C 401.6 820.5, 407.8 819.3, 420.9 813.3 C 434.9 806.9, 436.1 805.1, 431.1 799.2 L 429.2 797.0 419.7 801.5 C 374.1 823.1, 327.7 803.8, 315.0 758.0 C 308.4 734.2, 310.6 702.7, 320.3 682.5 C 331.7 658.6, 353.6 644.9, 380.4 645.0 C 389.6 645.0, 417.5 650.7, 426.1 654.4 C 427.2 654.9, 428.4 654.1, 430.0 651.9 L 432.3 648.7 429.9 646.6 C 418.9 637.6, 389.3 631.3, 370.2 633.9 M 551.4 637.4 C 548.0 639.2, 548.8 637.6, 515.4 704.1 L 495.0 744.8 487.7 741.5 C 452.8 725.4, 411.6 728.0, 383.7 747.9 C 377.1 752.7, 377.1 752.8, 380.5 756.0 C 383.0 758.3, 383.1 758.3, 385.7 756.6 C 415.5 737.6, 450.6 734.9, 482.2 749.3 C 486.5 751.3, 490 753.3, 490 753.8 C 490 754.3, 483.0 768.6, 474.5 785.6 C 465.9 802.6, 459.0 816.7, 459.0 817.1 C 458.9 818.3, 465.4 818.7, 468.2 817.7 C 470.5 816.9, 472.8 813.1, 483.1 792.6 C 493.3 772.1, 498.1 763.0, 499.6 761.1 C 499.8 760.8, 503.2 762.9, 507.2 765.7 C 537.2 786.4, 570.0 791.3, 605.2 780.3 C 610.0 778.8, 614.1 777.8, 614.3 778.0 C 614.5 778.3, 619.1 786.8, 624.4 797.1 C 631.2 810.1, 634.8 816.1, 636.6 817.0 C 639.2 818.4, 658.2 819.1, 659.4 817.8 C 660.8 816.5, 571.7 640.9, 568.5 638.7 C 564.7 635.9, 555.6 635.3, 551.4 637.4 M 681.2 636.7 L 678.9 637.1 679.2 727.3 L 679.5 817.5 691.7 817.7 L 704 818.0 704 767.0 L 704 716 745.5 716 L 787.1 716 786.8 710.7 L 786.5 705.5 745.2 705.2 L 704 704.9 704 675.9 L 704 647 755 647 L 806 647 805.9 643.7 C 805.9 635.7, 807.8 635.9, 741.8 636.1 C 709.7 636.2, 682.4 636.4, 681.2 636.7 M 838 727 L 838 818 903.9 818 L 969.9 818 970.9 814.2 C 973.1 806.2, 978.5 807, 917.5 807 L 863 807 863 761.5 L 863 716 913.5 716 L 964.1 716 963.8 710.7 L 963.5 705.5 913.2 705.2 L 863 704.9 863 675.9 L 863 647 915 647 L 967 647 967 643.5 C 967 641.0, 966.2 639.5, 964.3 638.0 C 961.7 636.0, 960.9 636, 899.8 636 L 838 636 838 727 M 528.6 701.7 C 515.6 728.0, 504.9 749.9, 504.9 750.5 C 505.1 755.7, 529.1 769.6, 546 774.1 C 557.3 777.1, 583.0 777.5, 592.5 774.6 C 600.9 772.1, 609 768.9, 609 767.9 C 609 767.0, 553.2 654, 552.7 654 C 552.5 654, 541.7 675.4, 528.6 701.7"/></svg>`;
 
 const CSS = String.raw`
 :root{--teal:#3d4864;--teal2:#4a5778;--sand:#f8f4ec;--copper:#a58670;--ink:#232b3d;--mut:#6f7686;--line:#e6dfd3;--ok:#1b7f4b;--bad:#b3261e}
 *{box-sizing:border-box}body{margin:0;background:var(--sand);color:var(--ink);font-family:"IBM Plex Sans Arabic","Segoe UI",Tahoma,sans-serif;line-height:1.5}
 .wrap{max-width:460px;margin:0 auto;padding:16px}.wide{max-width:1000px}
 header.top{display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--teal);color:#fff}
-header.top svg{width:62px;height:33px}header.top b{flex:1}
+header.top svg{width:48px;height:32px}header.top b{flex:1}
 header.top button{background:transparent;border:1px solid #fff6;color:#fff;border-radius:8px;padding:4px 10px;font:inherit;cursor:pointer}
 h2{font-size:1.05rem;margin:0 0 10px}
 .box{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
@@ -299,7 +299,7 @@ button.pri:disabled{opacity:.5}button.alt{background:var(--copper)}
 .hide{display:none}
 .card{--bg:#3d4864;--fg:#f8f4ec;--mo:#a58670;background:var(--bg);color:var(--fg);border-radius:20px;padding:16px 18px;box-shadow:0 8px 24px #3d486433;transition:background .6s,color .6s}
 .card.done{--bg:#f8f4ec;--fg:#3d4864;border:1px solid var(--mo)}
-.card .hd{display:flex;align-items:center;justify-content:space-between}.card .hd svg{width:64px;height:34px}.card .hd small{color:var(--mo)}
+.card .hd{display:flex;align-items:center;justify-content:space-between}.card .hd svg{width:60px;height:40px}.card .hd small{color:var(--mo)}
 .card .mid{display:flex;align-items:center;gap:6px;margin:4px 0}.card .mid svg.v60{width:178px;height:176px;flex:none;overflow:visible}
 .card .info{flex:1;text-align:center}.card .big{font-size:2.8rem;font-weight:600;line-height:1}.card .big span{font-size:1.2rem;color:var(--mo)}
 .card .lbl{color:var(--mo);font-size:.8rem}
@@ -343,12 +343,13 @@ function customerPage() {
   return head('بطاقة ولاء لاس') + `<div class="wrap">
 <div id="lookup" class="box"><h2>تحقق من بطاقتك</h2><label>رقم الجوال</label><input id="ph" class="num" inputmode="tel" placeholder="05XXXXXXXX" autocomplete="tel"><button class="pri" id="go">عرض البطاقة</button><div id="err" class="msg err hide"></div></div>
 <div id="out"></div></div>${QR_LIB}<script>${CUP_JS}
+var LOGO_SVG=${JSON.stringify(LOGO)};
 function v60(f,done,total){
  var body='M40 78H128V136a28 28 0 0 1-28 28H68a28 28 0 0 1-28-28Z',surf=82+(1-f)*86,fall=Math.max(0,Math.round(surf-92));
  var s='<svg class="v60" viewBox="0 0 178 176" role="img" aria-label="'+Math.round(f*total)+' / '+total+'" style="--fall:'+fall+'px"><defs><clipPath id="cl"><path d="'+body+'"/></clipPath></defs>';
  s+='<path d="'+body+'" fill="#a5867014" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M128 92h8a16 16 0 0 1 0 38h-8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>';
  s+='<g clip-path="url(#cl)"><g class="lvl" style="transform:translateY(86px)"><rect x="30" y="85" width="110" height="90" fill="#a58670"/><path class="wave" d="M-24 82q12-5 24 0t24 0t24 0t24 0t24 0t24 0t24 0t24 0t24 0t24 0V92H-24Z" fill="#a58670"/></g></g>';
- s+='<text x="84" y="154" text-anchor="middle" font-family="Georgia,serif" font-size="16" letter-spacing="4" fill="currentColor" opacity=".9">LAS</text>';
+ s+=LOGO_SVG.replace('<svg ','<svg x="62" y="122" width="44" height="30" opacity=".9" ');
  for(var i=1;i<=total;i++){var y=164-i*(82/total);s+='<line x1="40" y1="'+y+'" x2="47" y2="'+y+'" stroke="currentColor" stroke-opacity=".7"/><text x="32" y="'+(y+4)+'" text-anchor="end" font-size="11" fill="#a58670">'+i+'</text>'}
  s+='<path d="M34 18H134L102 70V84H66V70Z" fill="#a5867033" stroke="#a58670" stroke-width="2" stroke-linejoin="round"/>';
  [[54,73],[74,80],[94,88],[114,95]].forEach(function(p){s+='<line x1="'+p[0]+'" y1="22" x2="'+p[1]+'" y2="68" stroke="#a58670" stroke-opacity=".6"/>'});
@@ -359,7 +360,7 @@ function v60(f,done,total){
 function show(c){
  $('lookup').classList.add('hide');
  var f=Math.min(1,c.cups/c.cups_per_reward),done=c.free_drinks>0;
- var h='<div class="card'+(done?' done':'')+'"><div class="hd">'+${JSON.stringify(LOGO)}+'<small>بطاقة الولاء</small></div>'
+ var h='<div class="card'+(done?' done':'')+'"><div class="hd">'+LOGO_SVG+'<small>بطاقة الولاء</small></div>'
  +'<div class="mid">'+v60(f,done,c.cups_per_reward)+'<div class="info"><div class="big">'+c.cups+'<span> / '+c.cups_per_reward+'</span></div>'
  +(done?'<div class="band">مشروبك القادم علينا</div>':'')+'</div></div>'
  +'<div class="row"><div><div class="lbl">الاسم</div><div class="nm">'+esc(c.name)+'</div><div class="lbl" style="margin-top:6px">النقاط <b style="color:var(--fg);font-size:1.1rem">'+c.points+'</b></div></div>'

@@ -3,7 +3,7 @@
 One Cloudflare Worker + one D1 database. Nothing to install: deploy from the dashboard.
 Files: `worker.js` (all code and pages), `schema.sql` (tables and default rules).
 
-> Note: the earlier prototype never reached me, so this was built fresh. Colors come from the 2026 palette in the brand archive (`#a58670`, `#f8f4ec`, `#3d4864`). The "LAS CAFE" mark is typeset text; swap the `LOGO` constant in `worker.js` for the real logo SVG.
+> Note: the earlier prototype never reached me, so this was built fresh. Colors come from the 2026 palette in the brand archive (`#a58670`, `#f8f4ec`, `#3d4864`). The LAS CAFE logo is the real one, traced to a vector path (the `LOGO` constant in `worker.js`).
 
 ## Deploy (Cloudflare dashboard only)
 
