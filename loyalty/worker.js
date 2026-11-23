@@ -126,6 +126,23 @@ async function api(req, env, url) {
     return json({ ...cardView(c, cfg), name: c.name.split(' ')[0], wallet_apple_url: cfg.raw.wallet_apple_url, wallet_google_url: cfg.raw.wallet_google_url });
   }
 
+  // public: a customer creates their own card on /card (name + phone)
+  if (path === '/api/public/register' && method === 'POST') {
+    const SELF = 'تسجيل ذاتي';
+    const name = String(body.name || '').trim().slice(0, 60), phone = normalizePhone(body.phone);
+    if (name.length < 2) return fail('اكتب اسمك');
+    if (!phone) return fail('رقم الجوال غير صحيح (مثال: 05XXXXXXXX)');
+    if (await env.DB.prepare('SELECT 1 FROM customers WHERE phone = ?').bind(phone).first()) return fail('هذا الرقم لديه بطاقة، اعرضها بإدخال الرقم', 409);
+    // crude abuse guard: at most 30 self-registrations per hour across the whole system
+    const recent = await env.DB.prepare("SELECT COUNT(*) AS n FROM transactions WHERE type = 'register' AND staff_name = ? AND created_at > ?").bind(SELF, Date.now() - 3600000).first();
+    if (recent.n >= 30) return fail('محاولات كثيرة الآن، حاول لاحقًا أو سجّل عند الكاشير', 429);
+    const r = await env.DB.prepare('INSERT INTO customers (phone, name, card_code, created_at) VALUES (?,?,?,?)').bind(phone, name, newCardCode(), Date.now()).run();
+    await logTx(env, { id: r.meta.last_row_id, cups: 0 }, { name: SELF }, 'register', { note: 'تسجيل ذاتي من صفحة البطاقة' }).run();
+    const cfg = await getSettings(env);
+    const row = await env.DB.prepare('SELECT * FROM customers WHERE id = ?').bind(r.meta.last_row_id).first();
+    return json({ ...cardView(row, cfg), name: row.name.split(' ')[0], wallet_apple_url: cfg.raw.wallet_apple_url, wallet_google_url: cfg.raw.wallet_google_url });
+  }
+
   if (path === '/api/login' && method === 'POST') {
     const name = String(body.username || '').trim(), pin = String(body.pin || '');
     if (!env.ADMIN_PASSWORD) return fail('ADMIN_PASSWORD غير مضبوط', 500);
@@ -342,6 +359,7 @@ const QR_LIB = '<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-gener
 function customerPage() {
   return head('بطاقة ولاء لاس') + `<div class="wrap">
 <div id="lookup" class="box"><h2>تحقق من بطاقتك</h2><label>رقم الجوال</label><input id="ph" class="num" inputmode="tel" placeholder="05XXXXXXXX" autocomplete="tel"><button class="pri" id="go">عرض البطاقة</button><div id="err" class="msg err hide"></div></div>
+<div id="reg" class="box hide"><h2>لا توجد بطاقة لهذا الرقم</h2><p style="margin:0 0 6px;color:var(--mut)">أنشئ بطاقتك الآن، نحتاج اسمك فقط.</p><label>الاسم</label><input id="nm" autocomplete="name"><button class="pri" id="mk">إنشاء بطاقتي</button><div id="rerr" class="msg err hide"></div><p style="text-align:center;margin:10px 0 0"><a href="/card">رجوع</a></p></div>
 <div id="out"></div></div>${QR_LIB}<script>${CUP_JS}
 var LOGO_SVG=${JSON.stringify(LOGO)};
 function v60(f,done,total){
@@ -370,7 +388,11 @@ function show(c){
  if(c.wallet_google_url)w+='<a class="pri" style="display:block;text-align:center;text-decoration:none;margin-top:10px;padding:12px;border-radius:10px;background:#1a73e8;color:#fff" href="'+esc(c.wallet_google_url)+'">إضافة إلى Google Wallet</a>';
  $('out').innerHTML=h+w+'<p style="text-align:center"><a href="/card">بحث برقم آخر</a></p>';
 }
-async function find(q){try{show(await call('/api/public/card?'+q))}catch(e){$('err').textContent=e.message;$('err').classList.remove('hide');$('lookup').classList.remove('hide')}}
+async function find(q){try{show(await call('/api/public/card?'+q))}catch(e){
+ if(e.status===404&&q.indexOf('phone=')===0){$('lookup').classList.add('hide');$('reg').classList.remove('hide');$('nm').focus();return}
+ $('err').textContent=e.message;$('err').classList.remove('hide');$('lookup').classList.remove('hide')}}
+$('mk').onclick=async function(){$('mk').disabled=true;try{var r=await post('/api/public/register',{name:$('nm').value,phone:$('ph').value});$('reg').classList.add('hide');show(r)}catch(e){$('rerr').textContent=e.message;$('rerr').classList.remove('hide');$('mk').disabled=false}};
+$('nm').onkeydown=function(e){if(e.key==='Enter')$('mk').click()};
 $('go').onclick=function(){find('phone='+encodeURIComponent($('ph').value))};
 $('ph').onkeydown=function(e){if(e.key==='Enter')$('go').click()};
 if(location.pathname.indexOf('/c/')===0){$('lookup').classList.add('hide');find('code='+encodeURIComponent(location.pathname.slice(3)))}
