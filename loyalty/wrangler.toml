@@ -1,0 +1,10 @@
+name = "las-loyalty"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+workers_dev = true
+preview_urls = false
+
+[[d1_databases]]
+binding = "DB"
+database_name = "las-loyalty"
+database_id = "730c626f-6705-4b02-9ced-e6f70875daa8"
