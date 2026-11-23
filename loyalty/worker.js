@@ -302,7 +302,7 @@ button.pri:disabled{opacity:.5}button.alt{background:var(--copper)}
 .card .hd{display:flex;align-items:center;justify-content:space-between}.card .hd svg{width:64px;height:34px}.card .hd small{color:var(--mo)}
 .card .mid{display:flex;align-items:center;gap:6px;margin:4px 0}.card .mid svg.v60{width:178px;height:176px;flex:none;overflow:visible}
 .card .info{flex:1;text-align:center}.card .big{font-size:2.8rem;font-weight:600;line-height:1}.card .big span{font-size:1.2rem;color:var(--mo)}
-.card .lbl{color:var(--mo);font-size:.8rem}.card .left{font-size:.95rem;margin-top:8px}
+.card .lbl{color:var(--mo);font-size:.8rem}
 .card .band{background:var(--mo);color:#f8f4ec;border-radius:10px;padding:8px;font-weight:600;margin-top:8px}
 .card .row{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;border-top:1px solid #a5867066;padding-top:10px}
 .card .nm{font-size:1.1rem;font-weight:600}.card .pts b{font-size:1.1rem}
@@ -358,11 +358,10 @@ function v60(f,done,total){
  return s+'</svg>'}
 function show(c){
  $('lookup').classList.add('hide');
- var f=Math.min(1,c.cups/c.cups_per_reward),done=c.free_drinks>0,rem=c.cups_per_reward-c.cups;
- var left=rem===1?'باقي ختم واحد وتاخذ مشروبك المجاني':rem===2?'باقي ختمان وتاخذ مشروبك المجاني':'باقي '+rem+' أختام وتاخذ مشروبك المجاني';
+ var f=Math.min(1,c.cups/c.cups_per_reward),done=c.free_drinks>0;
  var h='<div class="card'+(done?' done':'')+'"><div class="hd">'+${JSON.stringify(LOGO)}+'<small>بطاقة الولاء</small></div>'
- +'<div class="mid">'+v60(f,done,c.cups_per_reward)+'<div class="info"><div class="big">'+c.cups+'<span> / '+c.cups_per_reward+'</span></div><div class="lbl">الأختام</div>'
- +(done?'<div class="band">مشروبك القادم علينا</div>':'<div class="left">'+left+'</div>')+'</div></div>'
+ +'<div class="mid">'+v60(f,done,c.cups_per_reward)+'<div class="info"><div class="big">'+c.cups+'<span> / '+c.cups_per_reward+'</span></div>'
+ +(done?'<div class="band">مشروبك القادم علينا</div>':'')+'</div></div>'
  +'<div class="row"><div><div class="lbl">الاسم</div><div class="nm">'+esc(c.name)+'</div><div class="lbl" style="margin-top:6px">النقاط <b style="color:var(--fg);font-size:1.1rem">'+c.points+'</b></div></div>'
  +'<div class="qr">'+qrSvg(c.card_code)+'<small>'+esc(c.card_code)+'</small></div></div></div>';
  setTimeout(function(){var l=document.querySelector('.v60 .lvl');if(l)l.style.transform='translateY('+((1-f)*86)+'px)'},150);
