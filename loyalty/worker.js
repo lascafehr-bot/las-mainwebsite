@@ -167,6 +167,28 @@ async function walletSync(env, c, cfg, origin) {
 const syncWallet = (env, ctx, c, cfg, origin) => { if (walletReady(env) && ctx) ctx.waitUntil(walletSync(env, c, cfg, origin)); };
 const pngResponse = (b64) => new Response(Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0)), { headers: { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400' } });
 
+// ---------- guess protection ----------
+// A cafe's customers and tills share one Wi-Fi address, so the limits are generous for normal use.
+const clientIp = (req) => req.headers.get('cf-connecting-ip') || 'local';
+const countHits = async (env, key, windowMs) =>
+  (await env.DB.prepare('SELECT COUNT(*) AS n FROM rate_limits WHERE key = ? AND ts > ?').bind(key, Date.now() - windowMs).first()).n;
+async function addHit(env, key, windowMs) {
+  await env.DB.prepare('INSERT INTO rate_limits (key, ts) VALUES (?, ?)').bind(key, Date.now()).run();
+  if (Math.random() < 0.02) await env.DB.prepare('DELETE FROM rate_limits WHERE ts < ?').bind(Date.now() - 86400000).run();
+  return countHits(env, key, windowMs);
+}
+const TOO_MANY = 'محاولات كثيرة، حاول بعد قليل';
+
+// ---------- backup ----------
+function csv(rows, cols) {
+  const cell = (v) => {
+    let t = v == null ? '' : String(v);
+    if (/^[=+\-@]/.test(t)) t = "'" + t; // stop spreadsheet formula injection
+    return '"' + t.replace(/"/g, '""') + '"';
+  };
+  return '﻿' + [cols.join(','), ...rows.map((r) => cols.map((c) => cell(r[c])).join(','))].join('\r\n');
+}
+
 // ---------- API ----------
 async function api(req, env, url, ctx) {
   const path = url.pathname;
@@ -176,8 +198,10 @@ async function api(req, env, url, ctx) {
   // public: customer card lookup (first name only, no phone returned)
   if (path === '/api/public/card' && method === 'GET') {
     const q = url.searchParams.get('code') || url.searchParams.get('phone');
+    const missKey = 'miss:' + clientIp(req);
+    if ((await countHits(env, missKey, 600000)) >= 40) return fail(TOO_MANY, 429);
     const c = await findCustomer(env, q);
-    if (!c) return fail('لم نجد بطاقة بهذا الرقم', 404);
+    if (!c) { await addHit(env, missKey, 600000); return fail('لم نجد بطاقة بهذا الرقم', 404); }
     const cfg = await getSettings(env);
     return json({ ...cardView(c, cfg), name: c.name.split(' ')[0], wallet_apple_url: cfg.raw.wallet_apple_url, wallet_google_url: cfg.raw.wallet_google_url, google_wallet: walletReady(env) });
   }
@@ -189,9 +213,10 @@ async function api(req, env, url, ctx) {
     if (name.length < 2) return fail('اكتب اسمك');
     if (!phone) return fail('رقم الجوال غير صحيح (مثال: 05XXXXXXXX)');
     if (await env.DB.prepare('SELECT 1 FROM customers WHERE phone = ?').bind(phone).first()) return fail('هذا الرقم لديه بطاقة، اعرضها بإدخال الرقم', 409);
-    // crude abuse guard: at most 30 self-registrations per hour across the whole system
+    // abuse guard: 20 self-registrations per hour per address, 200 across the whole system
+    if ((await addHit(env, 'reg:' + clientIp(req), 3600000)) > 20) return fail(TOO_MANY, 429);
     const recent = await env.DB.prepare("SELECT COUNT(*) AS n FROM transactions WHERE type = 'register' AND staff_name = ? AND created_at > ?").bind(SELF, Date.now() - 3600000).first();
-    if (recent.n >= 30) return fail('محاولات كثيرة الآن، حاول لاحقًا أو سجّل عند الكاشير', 429);
+    if (recent.n >= 200) return fail('محاولات كثيرة الآن، حاول لاحقًا أو سجّل عند الكاشير', 429);
     const r = await env.DB.prepare('INSERT INTO customers (phone, name, card_code, created_at) VALUES (?,?,?,?)').bind(phone, name, newCardCode(), Date.now()).run();
     await logTx(env, { id: r.meta.last_row_id, cups: 0 }, { name: SELF }, 'register', { note: 'تسجيل ذاتي من صفحة البطاقة' }).run();
     const cfg = await getSettings(env);
@@ -202,13 +227,19 @@ async function api(req, env, url, ctx) {
   if (path === '/api/login' && method === 'POST') {
     const name = String(body.username || '').trim(), pin = String(body.pin || '');
     if (!env.ADMIN_PASSWORD) return fail('ADMIN_PASSWORD غير مضبوط', 500);
+    // every attempt is counted first, so parallel guesses cannot slip past; success clears the name counter
+    const ip = clientIp(req), nameKey = 'login:' + ip + ':' + name.toLowerCase().slice(0, 40);
+    if ((await addHit(env, nameKey, 900000)) > 5 || (await addHit(env, 'loginip:' + ip, 900000)) > 30) return fail(TOO_MANY, 429);
+    const cleared = () => env.DB.prepare('DELETE FROM rate_limits WHERE key = ?').bind(nameKey).run();
     if (name.toLowerCase() === 'admin') {
       if (!safeEqual(pin, env.ADMIN_PASSWORD)) return fail('بيانات الدخول غير صحيحة', 401);
+      await cleared();
       const t = await makeSession(env, { id: null, name: 'Admin', role: 'admin' });
       return json({ ok: true, role: 'admin' }, 200, { 'set-cookie': cookie(t, 43200) });
     }
     const st = await env.DB.prepare('SELECT s.*, b.name AS branch_name FROM staff s JOIN branches b ON b.id = s.branch_id WHERE s.name = ? AND s.active = 1').bind(name).first();
     if (!st || !(await verifyPin(pin, st.pin_hash))) return fail('بيانات الدخول غير صحيحة', 401);
+    await cleared();
     const t = await makeSession(env, { id: st.id, name: st.name, role: 'cashier', branch_id: st.branch_id, branch_name: st.branch_name });
     return json({ ok: true, role: 'cashier' }, 200, { 'set-cookie': cookie(t, 43200) });
   }
@@ -287,6 +318,19 @@ async function api(req, env, url, ctx) {
   // ---- admin ----
   if (!path.startsWith('/api/admin/')) return fail('غير موجود', 404);
   if (s.role !== 'admin') return fail('للمدير فقط', 403);
+
+  if (path === '/api/admin/export' && method === 'GET') {
+    const tx = url.searchParams.get('what') === 'transactions';
+    const cols = tx
+      ? ['id', 'time', 'type', 'customer', 'phone', 'amount', 'cups_after', 'points_delta', 'staff_name', 'branch_name', 'note']
+      : ['name', 'phone', 'card_code', 'cups', 'points', 'rewards_redeemed', 'created'];
+    const { results } = await env.DB.prepare(tx
+      ? "SELECT t.id, datetime(t.created_at/1000, 'unixepoch', '+3 hours') AS time, t.type, c.name AS customer, c.phone, t.amount, t.cups_after, t.points_delta, t.staff_name, t.branch_name, t.note FROM transactions t JOIN customers c ON c.id = t.customer_id ORDER BY t.id"
+      : "SELECT name, phone, card_code, cups, points, rewards_redeemed, datetime(created_at/1000, 'unixepoch', '+3 hours') AS created FROM customers ORDER BY id").all();
+    const file = 'las-' + (tx ? 'transactions' : 'customers') + '-' + new Date(Date.now() + RIYADH_OFFSET).toISOString().slice(0, 10) + '.csv';
+    return new Response(csv(results.map((r) => ({ ...r, phone: maskPhone(r.phone) })), cols),
+      { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="' + file + '"', 'cache-control': 'no-store' } });
+  }
 
   if (path === '/api/admin/stats' && method === 'GET') {
     const bp = url.searchParams.get('branch');
@@ -511,6 +555,7 @@ function adminPage() {
  <div class="box"><h2>الموظفون</h2><div class="scroll"><table id="stf"></table></div>
   <label>اسم موظف جديد</label><input id="sn"><label>الفرع</label><select id="sb"></select><label>الرقم السري (4-8 أرقام)</label><input id="sp" class="num" inputmode="numeric"><button class="pri" id="sa">إضافة موظف</button><div id="smsg" class="msg hide"></div></div>
  <div class="box"><h2>الإعدادات</h2><div id="set"></div></div>
+ <div class="box"><h2>نسخة احتياطية (Excel / CSV)</h2><p style="margin:0"><a href="/api/admin/export?what=customers">تنزيل العملاء</a> · <a href="/api/admin/export?what=transactions">تنزيل السجل</a></p></div>
  <div class="box" style="text-align:center"><h2>QR الطاولة (صفحة البطاقة)</h2><div class="qr" style="width:170px;margin:auto;background:#fff;padding:10px;border:1px solid var(--line);border-radius:10px" id="tq"></div><small class="ltr" id="tu"></small></div>
 </div></div>${QR_LIB}<script>${CUP_JS}
 var LBL={register:'تسجيل',stamp:'ختم',visit:'زيارة (بدون كوب)',redeem:'استبدال',redeem_failed:'محاولة استبدال فاشلة'};

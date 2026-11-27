@@ -59,10 +59,14 @@ Setup (one time, free):
 
 Routes: `/wallet/google/<card code>` (redirects to the signed save link), `/wallet/logo.png`, `/wallet/hero/<0-5>.png`. The pictures are generated from the card art into `wallet-assets.js`; regenerate them if `cups_per_reward` is not 5. The Apple Wallet button still uses the manual `wallet_apple_url` setting (a static pass); automatically updating Apple passes need your own Apple Developer account (January).
 
-## Known limits for a demo (fix before real launch)
+## Protection and backup
 
-- `/card` looks a customer up by phone alone and returns the first name, cups and points. Someone could probe numbers. Add Cloudflare rate limiting or Turnstile before launch.
-- There is no login attempt throttle on `/api/login`.
+- Logins: 5 attempts per name per address in 15 minutes (30 per address). Card lookup: 40 not-found numbers per address in 10 minutes. Self-registration: 20 per hour per address, 200 overall. Needs the `rate_limits` table: run `schema.sql` on the database **before** deploying this code.
+- The admin page downloads customers and the full log as CSV (opens in Excel).
+
+## Known limits
+
+- `/card` still shows the first name, cups and points to anyone who types a number. The limits slow guessing but do not stop someone who changes address.
 - The QR image is drawn in the browser with `qrcode-generator` from cdnjs; if offline, the card code text still shows.
 - Cashiers type the phone or card code. Camera scanning is not included.
 - Tested locally against D1 (stamp, cooldown, under-20 visit, reward at 5, wrong and correct last 4, branch stats), but not in a real browser or on a real Cloudflare deploy.

@@ -47,6 +47,13 @@ CREATE INDEX IF NOT EXISTS idx_tx_created  ON transactions(created_at);
 CREATE INDEX IF NOT EXISTS idx_tx_customer ON transactions(customer_id);
 CREATE INDEX IF NOT EXISTS idx_tx_branch   ON transactions(branch_id, created_at);
 
+-- Short-lived counters that slow down guessing of phone numbers and PINs.
+CREATE TABLE IF NOT EXISTS rate_limits (
+  key TEXT NOT NULL,
+  ts  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rate ON rate_limits(key, ts);
+
 -- All business rules live here, so changing a rule never needs a schema change.
 CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
