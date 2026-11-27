@@ -5,16 +5,17 @@
 import { WALLET_IMG } from './wallet-assets.js';
 
 const RIYADH_OFFSET = 3 * 3600 * 1000; // UTC+3, no daylight saving
+const NO_NAME = 'عميل'; // placeholder for imported customers without a name
 const DEFAULTS = {
-  min_amount: '20',
+  min_amount: '10',
   cups_per_reward: '5',
-  points_per_order: '20',
+  points_per_riyal: '1',
   stamp_cooldown_hours: '3',
   points_redemption: '{"enabled":false,"points_needed":null,"value_sar":null}',
   wallet_apple_url: '',
   wallet_google_url: '',
 };
-const EDITABLE = ['min_amount', 'points_per_order', 'stamp_cooldown_hours', 'points_redemption', 'wallet_apple_url', 'wallet_google_url'];
+const EDITABLE = ['min_amount', 'points_per_riyal', 'stamp_cooldown_hours', 'points_redemption', 'wallet_apple_url', 'wallet_google_url'];
 const enc = new TextEncoder();
 
 // ---------- helpers ----------
@@ -90,7 +91,7 @@ async function getSettings(env) {
     raw: s,
     minAmount: Number(s.min_amount),
     cups: Number(s.cups_per_reward),
-    points: Number(s.points_per_order),
+    perRiyal: Number(s.points_per_riyal),
     cooldownMs: Number(s.stamp_cooldown_hours) * 3600 * 1000,
   };
 }
@@ -270,6 +271,19 @@ async function api(req, env, url, ctx) {
     return json({ ok: true, phone: maskPhone(phone) });
   }
 
+  // imported customers may have no name yet: the cashier adds it once, on their first visit
+  if (path === '/api/set-name' && method === 'POST') {
+    const deny = needCashier(); if (deny) return deny;
+    const name = String(body.name || '').trim().slice(0, 60);
+    if (name.length < 2) return fail('الاسم مطلوب');
+    const c = await findCustomer(env, body.phone);
+    if (!c) return fail('العميل غير مسجل', 404);
+    const up = await env.DB.prepare('UPDATE customers SET name = ? WHERE id = ? AND name = ?').bind(name, c.id, NO_NAME).run();
+    if (up.meta.changes === 0) return fail('العميل له اسم مسجل', 409);
+    await logTx(env, c, s, 'name', { note: 'إضافة الاسم' }).run();
+    return json({ ...cardView({ ...c, name }, await getSettings(env)), phone: maskPhone(c.phone) });
+  }
+
   if (path === '/api/stamp' && method === 'POST') {
     const deny = needCashier(); if (deny) return deny;
     const amount = Number(body.amount);
@@ -278,20 +292,21 @@ async function api(req, env, url, ctx) {
     if (!c) return fail('العميل غير مسجل', 404);
     const cfg = await getSettings(env);
     if (amount < cfg.minAmount) {
-      await logTx(env, c, s, 'visit', { amount, note: 'أقل من الحد الأدنى' }).run();
-      return json({ ok: true, stamped: false, message: 'المبلغ أقل من ' + cfg.minAmount + ' ريال، لا تُضاف أكواب', card: cardView(c, cfg) });
+      // under the minimum nothing is recorded: no cup, no points, no log
+      return json({ ok: true, stamped: false, message: 'المبلغ أقل من ' + cfg.minAmount + ' ريال، لا يُضاف ختم ولا نقاط', card: cardView(c, cfg) });
     }
     if (c.cups >= cfg.cups) return fail('البطاقة مكتملة، يجب استبدال المشروب المجاني أولاً', 409);
     // Atomic: the WHERE clause enforces both the 3-hour window and the cup cap, even with two cashiers at once.
     const now = Date.now();
+    const earned = Math.floor(amount * cfg.perRiyal); // whole points only
     const up = await env.DB.prepare('UPDATE customers SET cups = cups + 1, points = points + ?, last_stamp_at = ? WHERE id = ? AND cups < ? AND (last_stamp_at IS NULL OR last_stamp_at <= ?)')
-      .bind(cfg.points, now, c.id, cfg.cups, now - cfg.cooldownMs).run();
+      .bind(earned, now, c.id, cfg.cups, now - cfg.cooldownMs).run();
     if (up.meta.changes === 0) {
       const wait = Math.max(1, Math.ceil((c.last_stamp_at + cfg.cooldownMs - now) / 60000));
       return fail('تم إضافة ختم لهذا العميل مؤخرًا. المتبقي ' + wait + ' دقيقة', 429, { wait_minutes: wait });
     }
     const after = c.cups + 1;
-    await logTx(env, c, s, 'stamp', { amount, cups_after: after, points_delta: cfg.points, note: after >= cfg.cups ? 'اكتملت البطاقة' : null }).run();
+    await logTx(env, c, s, 'stamp', { amount, cups_after: after, points_delta: earned, note: after >= cfg.cups ? 'اكتملت البطاقة' : null }).run();
     const fresh = await env.DB.prepare('SELECT * FROM customers WHERE id = ?').bind(c.id).first();
     syncWallet(env, ctx, fresh, cfg, url.origin);
     return json({ ok: true, stamped: true, reward_earned: after >= cfg.cups, card: cardView(fresh, cfg) });
@@ -344,7 +359,7 @@ async function api(req, env, url, ctx) {
       q("SELECT COUNT(*) AS n FROM transactions t WHERE t.type = 'stamp' AND t.created_at >= ?2 AND " + F, today).first(),
       q("SELECT COUNT(*) AS n FROM transactions t WHERE t.type = 'redeem' AND t.created_at >= ?2 AND " + F, today).first(),
       q("SELECT c.name, c.phone, COUNT(*) AS visits, ROUND(SUM(t.amount),2) AS spent, c.cups, c.points FROM transactions t JOIN customers c ON c.id = t.customer_id WHERE t.type IN ('stamp','visit') AND " + F + ' GROUP BY c.id ORDER BY visits DESC, spent DESC LIMIT 10').all(),
-      q('SELECT t.type, t.amount, t.points_delta, t.staff_name, t.branch_name, t.note, t.created_at, c.name AS customer FROM transactions t JOIN customers c ON c.id = t.customer_id WHERE ' + F + ' ORDER BY t.id DESC LIMIT 30').all(),
+      q('SELECT t.type, t.amount, t.points_delta, t.staff_name, t.branch_name, t.note, t.created_at, c.name AS customer FROM transactions t JOIN customers c ON c.id = t.customer_id WHERE t.type != \'import\' AND ' + F + ' ORDER BY t.id DESC LIMIT 30').all(),
       env.DB.prepare('SELECT id, name FROM branches ORDER BY id').all(),
       env.DB.prepare('SELECT s.id, s.name, s.active, b.name AS branch_name FROM staff s JOIN branches b ON b.id = s.branch_id ORDER BY s.id').all(),
     ]);
@@ -532,7 +547,9 @@ function render(c){cur=c;var h='<div class="who"><b>'+esc(c.name)+'</b><span cla
  +'<p style="margin:0 0 8px">الأكواب <b>'+c.cups+'/'+c.cups_per_reward+'</b> · النقاط <b>'+c.points+'</b></p>';
  if(c.free_drinks){h+='<div class="msg ok">🎉 البطاقة مكتملة: المشروب التالي مجاني</div><label>اطلب من العميل آخر 4 أرقام من جواله</label><input id="l4" class="num" inputmode="numeric" maxlength="4"><button class="pri alt" id="rd">استبدال المشروب المجاني</button>'}
  else{h+='<label>مبلغ الفاتورة (ريال)</label><input id="am" class="num" inputmode="decimal" placeholder="0.00"><button class="pri" id="st">إضافة ختم</button>'}
+ if(c.name==='عميل')h='<div class="msg err">العميل بدون اسم، اسأله عن اسمه</div><input id="nn" placeholder="اسم العميل"><button class="pri alt" id="sn">حفظ الاسم</button>'+h;
  $('cust').innerHTML=h;$('cust').classList.remove('hide');$('reg').classList.add('hide');
+ if($('sn'))$('sn').onclick=async function(){try{render(await post('/api/set-name',{phone:$('q').value,name:$('nn').value}));msg('تم حفظ الاسم ✔',true)}catch(e){msg(e.message)}};
  if($('st'))$('st').onclick=stamp;if($('rd'))$('rd').onclick=redeem}
 async function lookup(){msg('');var q=$('q').value.trim();$('cust').classList.add('hide');$('reg').classList.add('hide');
  try{render(await call('/api/customer?q='+encodeURIComponent(q)))}catch(e){if(e.status===404){$('rp').value=q;$('rn').value='';$('reg').classList.remove('hide');msg('العميل غير مسجل، سجله الآن',true)}else msg(e.message)}}
@@ -558,9 +575,9 @@ function adminPage() {
  <div class="box"><h2>نسخة احتياطية (Excel / CSV)</h2><p style="margin:0"><a href="/api/admin/export?what=customers">تنزيل العملاء</a> · <a href="/api/admin/export?what=transactions">تنزيل السجل</a></p></div>
  <div class="box" style="text-align:center"><h2>QR الطاولة (صفحة البطاقة)</h2><div class="qr" style="width:170px;margin:auto;background:#fff;padding:10px;border:1px solid var(--line);border-radius:10px" id="tq"></div><small class="ltr" id="tu"></small></div>
 </div></div>${QR_LIB}<script>${CUP_JS}
-var LBL={register:'تسجيل',stamp:'ختم',visit:'زيارة (بدون كوب)',redeem:'استبدال',redeem_failed:'محاولة استبدال فاشلة'};
+var LBL={name:'إضافة اسم',import:'من بونات',register:'تسجيل',stamp:'ختم',visit:'زيارة (بدون كوب)',redeem:'استبدال',redeem_failed:'محاولة استبدال فاشلة'};
 function fmt(ms){return new Date(ms).toLocaleString('ar-SA',{timeZone:'Asia/Riyadh',dateStyle:'short',timeStyle:'short'})}
-var SL={min_amount:'الحد الأدنى للفاتورة (ريال)',points_per_order:'نقاط كل طلب',stamp_cooldown_hours:'ساعات بين الأختام',points_redemption:'قاعدة استبدال النقاط (JSON)',wallet_apple_url:'رابط Apple Wallet',wallet_google_url:'رابط Google Wallet'};
+var SL={min_amount:'الحد الأدنى للفاتورة (ريال)',points_per_riyal:'نقاط لكل ريال',stamp_cooldown_hours:'ساعات بين الأختام',points_redemption:'قاعدة استبدال النقاط (JSON)',wallet_apple_url:'رابط Apple Wallet',wallet_google_url:'رابط Google Wallet'};
 async function load(){
  var b=$('br').value;var d;
  try{d=await call('/api/admin/stats'+(b?'?branch='+b:''))}catch(e){$('login').classList.remove('hide');$('app').classList.add('hide');return}

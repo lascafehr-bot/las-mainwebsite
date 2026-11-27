@@ -54,6 +54,13 @@ CREATE TABLE IF NOT EXISTS rate_limits (
 );
 CREATE INDEX IF NOT EXISTS idx_rate ON rate_limits(key, ts);
 
+-- Points carried over from Bonat, per phone, so importing a newer file never counts them twice.
+CREATE TABLE IF NOT EXISTS bonat_import (
+  phone       TEXT PRIMARY KEY,
+  points      INTEGER NOT NULL,
+  imported_at INTEGER NOT NULL
+);
+
 -- All business rules live here, so changing a rule never needs a schema change.
 CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
@@ -63,9 +70,9 @@ CREATE TABLE IF NOT EXISTS settings (
 INSERT OR IGNORE INTO branches (name) VALUES ('العليا'), ('الملقا'), ('جدة');
 
 INSERT OR IGNORE INTO settings (key, value) VALUES
-  ('min_amount',           '20'),   -- SAR needed for a cup + points
+  ('min_amount',           '10'),   -- SAR needed for a cup + points
   ('cups_per_reward',      '5'),    -- cups to fill the card (next drink is free)
-  ('points_per_order',     '20'),   -- points per qualifying order
+  ('points_per_riyal',     '1'),    -- points earned per riyal on a qualifying bill
   ('stamp_cooldown_hours', '3'),    -- max 1 stamp per customer in this window
   -- Points redemption is not decided yet. When it is, edit this one value:
   ('points_redemption',    '{"enabled":false,"points_needed":null,"value_sar":null}'),

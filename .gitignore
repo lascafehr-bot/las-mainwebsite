@@ -20,3 +20,6 @@ assets/
 # wrangler cache
 .wrangler/
 .dev.vars
+
+# Pages build output
+loyalty/pages/dist/

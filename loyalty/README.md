@@ -70,3 +70,7 @@ Routes: `/wallet/google/<card code>` (redirects to the signed save link), `/wall
 - The QR image is drawn in the browser with `qrcode-generator` from cdnjs; if offline, the card code text still shows.
 - Cashiers type the phone or card code. Camera scanning is not included.
 - Tested locally against D1 (stamp, cooldown, under-20 visit, reward at 5, wrong and correct last 4, branch stats), but not in a real browser or on a real Cloudflare deploy.
+
+## card.lascafe.sa (Cloudflare Pages)
+
+DNS for lascafe.sa stays at t2.sa, so the subdomain is served by a Pages project (`las-card`) built from the same `worker.js`. In `loyalty/pages/`: `node build.mjs`, then `npx wrangler@4 pages deploy`. Same D1 database as the Worker; secrets are set per project. Deploy both the Worker and Pages after code changes while both addresses are in use.

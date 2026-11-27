@@ -1,0 +1,13 @@
+# Cloudflare Pages project for card.lascafe.sa. Same database as the Worker.
+name = "las-card"
+pages_build_output_dir = "dist"
+compatibility_date = "2025-01-01"
+
+[vars]
+GOOGLE_WALLET_ISSUER_ID = ""
+# Secrets (set per project): ADMIN_PASSWORD, and later GOOGLE_SERVICE_ACCOUNT.
+
+[[d1_databases]]
+binding = "DB"
+database_name = "las-loyalty"
+database_id = "730c626f-6705-4b02-9ced-e6f70875daa8"
