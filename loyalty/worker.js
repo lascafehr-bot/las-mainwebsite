@@ -504,7 +504,10 @@ function v60(f,done,total){
  if(!done)s+='<circle class="drop" cx="84" cy="88" r="2.8" fill="#a58670"/><circle class="drop d2" cx="84" cy="88" r="2.8" fill="#a58670"/>';
  else s+='<g fill="none" stroke="#a58670" stroke-width="2" stroke-linecap="round"><path class="steam" d="M70 10q-5-5 0-10t0-9"/><path class="steam s2" d="M84 10q-5-5 0-10t0-9"/><path class="steam s3" d="M98 10q-5-5 0-10t0-9"/></g>';
  return s+'</svg>'}
+function remember(v){try{if(v)localStorage.setItem('las_card',v);else localStorage.removeItem('las_card')}catch(e){}}
+function recall(){try{return localStorage.getItem('las_card')}catch(e){return null}}
 function show(c){
+ remember(c.card_code);
  $('lookup').classList.add('hide');
  var f=Math.min(1,c.cups/c.cups_per_reward),done=c.free_drinks>0;
  var h='<div class="card'+(done?' done':'')+'"><div class="hd">'+LOGO_SVG+'<small>بطاقة الولاء</small></div>'
@@ -516,7 +519,8 @@ function show(c){
  var w='';if(c.wallet_apple_url)w+='<a class="pri" style="display:block;text-align:center;text-decoration:none;margin-top:10px;padding:12px;border-radius:10px;background:#000;color:#fff" href="'+esc(c.wallet_apple_url)+'">إضافة إلى Apple Wallet</a>';
  var gurl=c.google_wallet?'/wallet/google/'+c.card_code:c.wallet_google_url;
  if(gurl)w+='<a class="pri" style="display:block;text-align:center;text-decoration:none;margin-top:10px;padding:12px;border-radius:10px;background:#1a73e8;color:#fff" href="'+esc(gurl)+'">إضافة إلى Google Wallet</a>';
- $('out').innerHTML=h+w+'<p style="text-align:center"><a href="/card">بحث برقم آخر</a></p>';
+ $('out').innerHTML=h+w+'<p style="text-align:center"><a href="/card" id="other">بحث برقم آخر</a></p>';
+ $('other').onclick=function(){remember(null)};
 }
 async function find(q){try{show(await call('/api/public/card?'+q))}catch(e){
  if(e.status===404&&q.indexOf('phone=')===0){$('lookup').classList.add('hide');$('reg').classList.remove('hide');$('nm').focus();return}
@@ -526,6 +530,7 @@ $('nm').onkeydown=function(e){if(e.key==='Enter')$('mk').click()};
 $('go').onclick=function(){find('phone='+encodeURIComponent($('ph').value))};
 $('ph').onkeydown=function(e){if(e.key==='Enter')$('go').click()};
 if(location.pathname.indexOf('/c/')===0){$('lookup').classList.add('hide');find('code='+encodeURIComponent(location.pathname.slice(3)))}
+else if(recall()){$('lookup').classList.add('hide');find('code='+encodeURIComponent(recall()))}
 </script></body></html>`;
 }
 
@@ -535,14 +540,15 @@ function staffPage() {
 <div id="login" class="box hide"><h2>تسجيل دخول الموظف</h2><label>اسم الموظف</label><input id="u" autocomplete="username"><label>الرقم السري</label><input id="p" type="password" class="num" inputmode="numeric" autocomplete="current-password"><button class="pri" id="lg">دخول</button><div id="lerr" class="msg err hide"></div></div>
 <div id="app" class="hide">
  <div id="done" class="done hide" role="status"></div>
- <div class="box"><label style="margin-top:0">جوال العميل (أو امسح بطاقته)</label><input id="q" class="num" inputmode="numeric" placeholder="05XXXXXXXX" autocomplete="off"></div>
+ <div class="box"><label style="margin-top:0">جوال العميل (أو امسح بطاقته)</label><input id="q" class="num" inputmode="numeric" placeholder="05XXXXXXXX" autocomplete="off"><button class="pri alt big" id="scan">📷 مسح بطاقة العميل</button>
+ <div id="cam" class="hide"><video id="vid" playsinline muted style="width:100%;border-radius:12px;margin-top:10px;background:#000"></video><div style="display:flex;gap:8px"><button class="pri" id="flip">تبديل الكاميرا</button><button class="pri" id="stop">إلغاء</button></div></div></div>
  <div id="msg" class="msg hide" role="alert"></div>
  <div id="reg" class="box hide"><h2>عميل جديد</h2><label>الاسم</label><input id="rn" class="big" autocomplete="off"><label>مبلغ الفاتورة (ريال)</label><input id="ra" class="num big" inputmode="decimal" autocomplete="off"><button class="pri alt big" id="rg">سجّل وأضف الختم</button></div>
  <div id="cust" class="box hide"></div>
-</div></div><script>${CUP_JS}
+</div></div><script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script><script>${CUP_JS}
 var cur=null,busy=false,seq=0,pending=false,newPhone='';
 function msg(t,ok){var m=$('msg');m.textContent=t||'';m.className='msg '+(ok?'ok':'err')+(t?'':' hide')}
-function digits(s){return String(s).replace(/[٠-٩]/g,function(c){return c.charCodeAt(0)-1632}).replace(/[\\s-]/g,'')}
+function digits(s){s=String(s).trim();if(/^las-/i.test(s))return s.toUpperCase();return s.replace(/[٠-٩]/g,function(c){return c.charCodeAt(0)-1632}).replace(/[\\s-]/g,'')}
 function amt(s){return digits(s).replace(/[٫,]/g,'.')}
 function complete(s){return /^(05\\d{8}|5\\d{8}|(\\+|00)?9665\\d{8}|LAS-[A-Z0-9]{8})$/i.test(s)}
 function clearPanels(){cur=null;$('cust').classList.add('hide');$('cust').innerHTML='';$('reg').classList.add('hide')}
@@ -582,7 +588,21 @@ async function register(){if(busy)return;var name=$('rn').value.trim(),a=amt($('
   try{if(!a){banner(name+' ✔','تم التسجيل');next();msg('')}else{var r=await post('/api/stamp',{phone:phone,amount:a});if(!stamped(0,r)){await lookup();msg('تم التسجيل. '+r.message)}}}
   catch(e){await lookup();msg('تم التسجيل لكن الختم لم يُضف: '+e.message)}}
  catch(e){fail(e)}busy=false;$('rg').disabled=false}
-$('q').oninput=function(){msg('');seq++;pending=false;clearPanels();var s=digits($('q').value);if(s)hideBanner();if(complete(s))lookup()};
+var stream=null,facing='environment',canvas=document.createElement('canvas'),lastScan=0;
+function stopScan(){if(stream)stream.getTracks().forEach(function(t){t.stop()});stream=null;$('cam').classList.add('hide');$('scan').classList.remove('hide')}
+async function startScan(){msg('');hideBanner();seq++;clearPanels();$('q').value='';
+ if(typeof jsQR!=='function'||!navigator.mediaDevices){msg('المسح غير متاح، اكتب رقم الجوال');return}
+ try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:facing},audio:false})}catch(e){msg('لم يُسمح باستخدام الكاميرا. اسمح بها من الإعدادات أو اكتب رقم الجوال');return}
+ $('cam').classList.remove('hide');$('scan').classList.add('hide');var v=$('vid');v.srcObject=stream;await v.play().catch(function(){});requestAnimationFrame(tick)}
+function tick(t){if(!stream)return;var v=$('vid');
+ if(v.videoWidth&&t-lastScan>150){lastScan=t;var w=Math.min(640,v.videoWidth),h=Math.round(v.videoHeight*w/v.videoWidth);canvas.width=w;canvas.height=h;var x=canvas.getContext('2d',{willReadFrequently:true});x.drawImage(v,0,0,w,h);
+  var r=jsQR(x.getImageData(0,0,w,h).data,w,h);
+  if(r&&/^LAS-[A-Z0-9]{8}$/i.test(r.data.trim())){stopScan();$('q').value=r.data.trim().toUpperCase();if(navigator.vibrate)navigator.vibrate(80);lookup();return}}
+ requestAnimationFrame(tick)}
+$('scan').onclick=startScan;$('stop').onclick=function(){stopScan();$('q').focus()};
+$('flip').onclick=function(){facing=facing==='environment'?'user':'environment';stopScan();startScan()};
+document.addEventListener('visibilitychange',function(){if(document.hidden)stopScan()});
+$('q').oninput=function(){if(stream)stopScan();msg('');seq++;pending=false;clearPanels();var s=digits($('q').value);if(s)hideBanner();if(complete(s))lookup()};
 $('q').onkeydown=function(e){if(e.key!=='Enter')return;if(cur){var f=$('am')||$('l4');if(f)f.focus()}else if(!pending)lookup()};
 $('rg').onclick=register;$('ra').onkeydown=function(e){if(e.key==='Enter')register()};$('rn').onkeydown=function(e){if(e.key==='Enter')$('ra').focus()};
 $('lg').onclick=async function(){try{await post('/api/login',{username:$('u').value,pin:$('p').value});$('p').value='';$('lerr').classList.add('hide');boot()}catch(e){$('lerr').textContent=e.message;$('lerr').classList.remove('hide')}};
