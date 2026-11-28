@@ -61,6 +61,11 @@ CREATE TABLE IF NOT EXISTS bonat_import (
   imported_at INTEGER NOT NULL
 );
 
+-- Stamps the cashier undid. The original log row stays; reports skip it.
+CREATE TABLE IF NOT EXISTS voided (
+  tx_id INTEGER PRIMARY KEY
+);
+
 -- All business rules live here, so changing a rule never needs a schema change.
 CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,

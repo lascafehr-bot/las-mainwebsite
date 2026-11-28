@@ -190,6 +190,14 @@ function csv(rows, cols) {
   return '﻿' + [cols.join(','), ...rows.map((r) => cols.map((c) => cell(r[c])).join(','))].join('\r\n');
 }
 
+// ---------- undo ----------
+const UNDO_MS = 5 * 60000;
+const LIVE = 't.id NOT IN (SELECT tx_id FROM voided)'; // log rows that still count
+const lastStampAt = async (env, id) =>
+  (await env.DB.prepare("SELECT MAX(t.created_at) AS at FROM transactions t WHERE t.customer_id = ? AND t.type = 'stamp' AND " + LIVE).bind(id).first()).at;
+// A stamp can be undone only if nothing later changed this customer's cups or points.
+const NO_LATER = "NOT EXISTS (SELECT 1 FROM transactions x WHERE x.customer_id = t.customer_id AND x.id > t.id AND x.type IN ('stamp','redeem','adjust') AND x.id NOT IN (SELECT tx_id FROM voided))";
+
 // ---------- API ----------
 async function api(req, env, url, ctx) {
   const path = url.pathname;
@@ -256,7 +264,8 @@ async function api(req, env, url, ctx) {
     const c = await findCustomer(env, url.searchParams.get('q'));
     if (!c) return fail('غير مسجل', 404);
     const cfg = await getSettings(env);
-    return json({ ...cardView(c, cfg), phone: maskPhone(c.phone), min_amount: cfg.minAmount, points_per_riyal: cfg.perRiyal });
+    const at = await lastStampAt(env, c.id), mins = at && Date.now() - at < UNDO_MS ? Math.max(1, Math.round((Date.now() - at) / 60000)) : null;
+    return json({ ...cardView(c, cfg), phone: maskPhone(c.phone), min_amount: cfg.minAmount, points_per_riyal: cfg.perRiyal, stamped_minutes_ago: mins });
   }
 
   if (path === '/api/register' && method === 'POST') {
@@ -332,6 +341,34 @@ async function api(req, env, url, ctx) {
     return json({ ok: true, card: cardView(fresh, cfg) });
   }
 
+  // the cashier's own last operations today, with which of them can still be undone
+  if (path === '/api/recent' && method === 'GET') {
+    const deny = needCashier(); if (deny) return deny;
+    const { results } = await env.DB.prepare(
+      "SELECT t.id, t.type, t.amount, t.points_delta, t.created_at, c.name AS customer, substr(c.phone, -4) AS last4, " +
+      "(t.type = 'stamp' AND t.created_at > ?2 AND " + LIVE + " AND " + NO_LATER + ") AS undoable, (t.id IN (SELECT tx_id FROM voided)) AS undone " +
+      "FROM transactions t JOIN customers c ON c.id = t.customer_id WHERE t.staff_id = ?1 AND t.type IN ('stamp','redeem','register') AND t.created_at >= ?3 ORDER BY t.id DESC LIMIT 5"
+    ).bind(s.id, Date.now() - UNDO_MS, dayStart(Date.now())).all();
+    return json({ items: results });
+  }
+
+  if (path === '/api/undo' && method === 'POST') {
+    const deny = needCashier(); if (deny) return deny;
+    const id = Number(body.id);
+    const t = await env.DB.prepare("SELECT t.* FROM transactions t WHERE t.id = ? AND t.type = 'stamp' AND t.staff_id = ? AND t.created_at > ? AND " + NO_LATER).bind(id, s.id, Date.now() - UNDO_MS).first();
+    if (!t) return fail('لا يمكن التراجع: مضى أكثر من 5 دقائق أو تغيرت البطاقة بعده. اطلب من المدير', 409);
+    // the primary key makes a second undo of the same stamp impossible
+    const v = await env.DB.prepare('INSERT OR IGNORE INTO voided (tx_id) VALUES (?)').bind(id).run();
+    if (v.meta.changes === 0) return fail('تم التراجع مسبقًا', 409);
+    await env.DB.prepare('UPDATE customers SET cups = MAX(cups - 1, 0), points = MAX(points - ?, 0), last_stamp_at = ? WHERE id = ?')
+      .bind(t.points_delta, await lastStampAt(env, t.customer_id), t.customer_id).run();
+    const c = await env.DB.prepare('SELECT * FROM customers WHERE id = ?').bind(t.customer_id).first();
+    const cfg = await getSettings(env);
+    await logTx(env, c, s, 'undo', { amount: t.amount, points_delta: -t.points_delta, note: 'تراجع عن ختم رقم ' + id }).run();
+    syncWallet(env, ctx, c, cfg, url.origin);
+    return json({ ok: true, card: cardView(c, cfg) });
+  }
+
   // ---- admin ----
   if (!path.startsWith('/api/admin/')) return fail('غير موجود', 404);
   if (s.role !== 'admin') return fail('للمدير فقط', 403);
@@ -349,6 +386,36 @@ async function api(req, env, url, ctx) {
       { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="' + file + '"', 'cache-control': 'no-store' } });
   }
 
+  // manager corrections: every change needs a reason and is logged with old and new values
+  if (path === '/api/admin/customer' && method === 'GET') {
+    const c = await findCustomer(env, url.searchParams.get('q'));
+    if (!c) return fail('لا يوجد عميل بهذا الرقم', 404);
+    return json({ id: c.id, name: c.name, phone: maskPhone(c.phone), cups: c.cups, points: c.points });
+  }
+  if (path === '/api/admin/adjust' && method === 'POST') {
+    const c = await env.DB.prepare('SELECT * FROM customers WHERE id = ?').bind(Number(body.id)).first();
+    if (!c) return fail('العميل غير موجود', 404);
+    const cfg = await getSettings(env);
+    const name = String(body.name || '').trim().slice(0, 60), phone = normalizePhone(body.phone), reason = String(body.reason || '').trim().slice(0, 200);
+    const cups = Number(body.cups), points = Number(body.points);
+    if (reason.length < 3) return fail('اكتب سبب التعديل');
+    if (name.length < 2) return fail('الاسم مطلوب');
+    if (!phone) return fail('رقم الجوال غير صحيح');
+    if (!(Number.isInteger(cups) && cups >= 0 && cups <= cfg.cups)) return fail('الأكواب من 0 إلى ' + cfg.cups);
+    if (!(Number.isInteger(points) && points >= 0 && points <= 1000000)) return fail('النقاط غير صحيحة');
+    if (phone !== c.phone && (await env.DB.prepare('SELECT 1 FROM customers WHERE phone = ?').bind(phone).first())) return fail('الرقم الجديد مسجل لعميل آخر', 409);
+    const changes = [];
+    if (name !== c.name) changes.push('الاسم: ' + c.name + ' ← ' + name);
+    if (phone !== c.phone) changes.push('الجوال: ' + maskPhone(c.phone) + ' ← ' + maskPhone(phone));
+    if (cups !== c.cups) changes.push('الأكواب: ' + c.cups + ' ← ' + cups);
+    if (points !== c.points) changes.push('النقاط: ' + c.points + ' ← ' + points);
+    if (!changes.length) return fail('لا يوجد تغيير');
+    await env.DB.prepare('UPDATE customers SET name = ?, phone = ?, cups = ?, points = ? WHERE id = ?').bind(name, phone, cups, points, c.id).run();
+    await logTx(env, { id: c.id, cups }, s, 'adjust', { points_delta: points - c.points, note: reason + ' | ' + changes.join('، ') }).run();
+    syncWallet(env, ctx, { ...c, name, phone, cups, points }, cfg, url.origin);
+    return json({ ok: true });
+  }
+
   if (path === '/api/admin/stats' && method === 'GET') {
     const bp = url.searchParams.get('branch');
     const branch = bp ? Number(bp) : null;
@@ -357,10 +424,10 @@ async function api(req, env, url, ctx) {
     const q = (sql, ...b) => env.DB.prepare(sql).bind(branch, ...b);
     const [cust, visits, stamps, redeems, top, recent, branches, staff] = await Promise.all([
       q("SELECT COUNT(DISTINCT t.customer_id) AS n FROM transactions t WHERE t.type != 'redeem_failed' AND " + F).first(),
-      q("SELECT COUNT(*) AS n FROM transactions t WHERE t.type IN ('stamp','visit') AND t.created_at >= ?2 AND " + F, today).first(),
-      q("SELECT COUNT(*) AS n FROM transactions t WHERE t.type = 'stamp' AND t.created_at >= ?2 AND " + F, today).first(),
+      q("SELECT COUNT(*) AS n FROM transactions t WHERE t.type IN ('stamp','visit') AND " + LIVE + " AND t.created_at >= ?2 AND " + F, today).first(),
+      q("SELECT COUNT(*) AS n FROM transactions t WHERE t.type = 'stamp' AND " + LIVE + " AND t.created_at >= ?2 AND " + F, today).first(),
       q("SELECT COUNT(*) AS n FROM transactions t WHERE t.type = 'redeem' AND t.created_at >= ?2 AND " + F, today).first(),
-      q("SELECT c.name, c.phone, COUNT(*) AS visits, ROUND(SUM(t.amount),2) AS spent, c.cups, c.points FROM transactions t JOIN customers c ON c.id = t.customer_id WHERE t.type IN ('stamp','visit') AND " + F + ' GROUP BY c.id ORDER BY visits DESC, spent DESC LIMIT 10').all(),
+      q("SELECT c.name, c.phone, COUNT(*) AS visits, ROUND(SUM(t.amount),2) AS spent, c.cups, c.points FROM transactions t JOIN customers c ON c.id = t.customer_id WHERE t.type IN ('stamp','visit') AND " + LIVE + " AND " + F + ' GROUP BY c.id ORDER BY visits DESC, spent DESC LIMIT 10').all(),
       q('SELECT t.type, t.amount, t.points_delta, t.staff_name, t.branch_name, t.note, t.created_at, c.name AS customer FROM transactions t JOIN customers c ON c.id = t.customer_id WHERE t.type != \'import\' AND ' + F + ' ORDER BY t.id DESC LIMIT 30').all(),
       env.DB.prepare('SELECT id, name FROM branches ORDER BY id').all(),
       env.DB.prepare('SELECT s.id, s.name, s.active, b.name AS branch_name FROM staff s JOIN branches b ON b.id = s.branch_id ORDER BY s.id').all(),
@@ -417,6 +484,7 @@ export default {
       if (url.pathname === '/card' || url.pathname.startsWith('/c/')) return html(customerPage());
       if (url.pathname === '/staff') return html(staffPage());
       if (url.pathname === '/admin') return html(adminPage());
+      if (url.pathname === '/guide') return html(guidePage());
       return new Response('Not found', { status: 404 });
     } catch (e) {
       return fail('خطأ في الخادم: ' + e.message, 500);
@@ -545,6 +613,7 @@ function staffPage() {
  <div id="msg" class="msg hide" role="alert"></div>
  <div id="reg" class="box hide"><h2>عميل جديد</h2><label>الاسم</label><input id="rn" class="big" autocomplete="off"><label>مبلغ الفاتورة (ريال)</label><input id="ra" class="num big" inputmode="decimal" autocomplete="off"><button class="pri alt big" id="rg">سجّل وأضف الختم</button></div>
  <div id="cust" class="box hide"></div>
+ <div class="box"><h2>آخر عملياتك</h2><div id="recent" class="pv">لا يوجد بعد</div><p style="text-align:center;margin:8px 0 0"><a href="/guide" target="_blank">دليل الكاشير</a></p></div>
 </div></div><script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script><script>${CUP_JS}
 var cur=null,busy=false,seq=0,pending=false,newPhone='';
 function msg(t,ok){var m=$('msg');m.textContent=t||'';m.className='msg '+(ok?'ok':'err')+(t?'':' hide')}
@@ -557,7 +626,7 @@ function hideBanner(){$('done').className='done hide'}
 function next(){seq++;clearPanels();$('q').value='';$('q').focus()}
 function bigOk(a){return Number(a)<=500||confirm('المبلغ '+a+' ريال، هل هو صحيح؟')}
 async function boot(){try{var me=await call('/api/me');if(me.role!=='cashier'){location.href='/admin';return}
- $('who').textContent=me.name+' · فرع '+me.branch_name;$('out').classList.remove('hide');$('app').classList.remove('hide');$('login').classList.add('hide');$('q').focus()}
+ $('who').textContent=me.name+' · فرع '+me.branch_name;$('out').classList.remove('hide');$('app').classList.remove('hide');$('login').classList.add('hide');$('q').focus();loadRecent()}
  catch(e){$('app').classList.add('hide');$('out').classList.add('hide');$('login').classList.remove('hide')}}
 function fail(e){if(e.status===401){boot();return}msg(e.message)}
 async function lookup(){var s=digits($('q').value);if(!s)return;var my=++seq;clearPanels();pending=true;
@@ -575,17 +644,27 @@ function render(c){cur=c;
  if($('st')){$('st').onclick=stamp;$('am').onkeydown=function(e){if(e.key==='Enter')stamp()};$('am').oninput=preview;$('am').focus()}
  if($('rd')){$('rd').onclick=redeem;$('l4').onkeydown=function(e){if(e.key==='Enter')redeem()};$('l4').focus()}}
 function preview(){var a=Number(amt($('am').value));$('pv').textContent=!(a>0)?'':a<cur.min_amount?'أقل من '+cur.min_amount+' ريال: لا ختم ولا نقاط':'+'+Math.floor(a*cur.points_per_riyal)+' نقطة وختم واحد'}
-async function saveName(){if(busy||!cur)return;busy=true;try{var c=await post('/api/set-name',{phone:cur.card_code,name:$('nn').value});c.min_amount=cur.min_amount;c.points_per_riyal=cur.points_per_riyal;render(c);msg('تم حفظ الاسم ✔',true)}catch(e){fail(e)}busy=false}
+async function saveName(){if(busy||!cur)return;busy=true;try{var c=await post('/api/set-name',{phone:cur.card_code,name:$('nn').value});c.stamped_minutes_ago=cur.stamped_minutes_ago;c.min_amount=cur.min_amount;c.points_per_riyal=cur.points_per_riyal;render(c);msg('تم حفظ الاسم ✔',true)}catch(e){fail(e)}busy=false}
+var OPS={stamp:'ختم',redeem:'مشروب مجاني',register:'تسجيل'};
+async function loadRecent(){try{var d=await call('/api/recent');
+ $('recent').innerHTML=d.items.length?d.items.map(function(t){
+  var time=new Date(t.created_at).toLocaleTimeString('ar-SA',{timeZone:'Asia/Riyadh',hour:'2-digit',minute:'2-digit'});
+  return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);color:var(--ink)'+(t.undone?';text-decoration:line-through;opacity:.5':'')+'"><span>'+esc(time)+' · '+esc(t.customer)+' (…'+esc(t.last4)+') · '+OPS[t.type]+(t.amount?' · '+t.amount+' ريال':'')+'</span>'
+   +(t.undoable?'<button class="pri alt un" data-id="'+t.id+'" data-who="'+esc(t.customer)+'" data-am="'+t.amount+'" style="width:auto;margin:0;padding:6px 12px">تراجع</button>':'')+'</div>'}).join(''):'لا يوجد بعد';
+ document.querySelectorAll('.un').forEach(function(b){b.onclick=function(){undo(b)}})}catch(e){if(e.status===401)boot()}}
+async function undo(b){if(busy||!confirm('التراجع عن ختم '+b.dataset.who+' بمبلغ '+b.dataset.am+' ريال؟'))return;busy=true;hideBanner();
+ try{var r=await post('/api/undo',{id:b.dataset.id});banner('تم التراجع',r.card.name+' · الأختام '+r.card.cups+' / '+r.card.cups_per_reward+' · النقاط '+r.card.points,true);next();msg('')}catch(e){fail(e)}busy=false;loadRecent()}
 function stamped(before,r){if(!r.stamped){msg(r.message);return false}
- banner(r.card.name+' ✔','الأختام '+r.card.cups+' / '+r.card.cups_per_reward+' · +'+(r.card.points-before)+' نقطة'+(r.reward_earned?' · المشروب القادم مجاني 🎉':''),r.reward_earned);next();msg('');return true}
+ banner(r.card.name+' ✔','الأختام '+r.card.cups+' / '+r.card.cups_per_reward+' · +'+(r.card.points-before)+' نقطة'+(r.reward_earned?' · المشروب القادم مجاني 🎉':''),r.reward_earned);next();msg('');loadRecent();return true}
 async function stamp(){if(busy||!cur)return;var a=amt($('am').value),c=cur;if(!(Number(a)>0)){msg('أدخل مبلغ الفاتورة');return}if(!bigOk(a))return;
+ if(c.stamped_minutes_ago&&!confirm('هذا العميل أخذ ختم قبل '+c.stamped_minutes_ago+' دقيقة. هل هذه فاتورة جديدة؟'))return;
  busy=true;$('st').disabled=true;try{stamped(c.points,await post('/api/stamp',{phone:c.card_code,amount:a}))}catch(e){fail(e)}busy=false;if($('st'))$('st').disabled=false}
-async function redeem(){if(busy||!cur)return;busy=true;try{var r=await post('/api/redeem',{phone:cur.card_code,last4:digits($('l4').value)});banner(r.card.name+' ✔','تم المشروب المجاني، البطاقة بدأت من جديد',true);next();msg('')}catch(e){fail(e)}busy=false}
+async function redeem(){if(busy||!cur)return;busy=true;try{var r=await post('/api/redeem',{phone:cur.card_code,last4:digits($('l4').value)});banner(r.card.name+' ✔','تم المشروب المجاني، البطاقة بدأت من جديد',true);next();msg('');loadRecent()}catch(e){fail(e)}busy=false}
 async function register(){if(busy)return;var name=$('rn').value.trim(),a=amt($('ra').value),phone=newPhone;
  if(name.length<2){msg('اكتب اسم العميل');$('rn').focus();return}if(a&&!(Number(a)>0)){msg('المبلغ غير صحيح');return}if(a&&!bigOk(a))return;
  busy=true;$('rg').disabled=true;
  try{await post('/api/register',{name:name,phone:phone});
-  try{if(!a){banner(name+' ✔','تم التسجيل');next();msg('')}else{var r=await post('/api/stamp',{phone:phone,amount:a});if(!stamped(0,r)){await lookup();msg('تم التسجيل. '+r.message)}}}
+  try{if(!a){banner(name+' ✔','تم التسجيل');next();msg('');loadRecent()}else{var r=await post('/api/stamp',{phone:phone,amount:a});if(!stamped(0,r)){await lookup();msg('تم التسجيل. '+r.message)}}}
   catch(e){await lookup();msg('تم التسجيل لكن الختم لم يُضف: '+e.message)}}
  catch(e){fail(e)}busy=false;$('rg').disabled=false}
 var stream=null,facing='environment',canvas=document.createElement('canvas'),lastScan=0;
@@ -612,6 +691,23 @@ boot();
 </script></body></html>`;
 }
 
+function guidePage() {
+  return head('دليل الكاشير · لاس') + `<style>.g{max-width:720px;margin:auto;padding:16px}.g h1{font-size:1.4rem;margin:0 0 8px}.g h2{margin:14px 0 4px}.g ol,.g ul{margin:0;padding-inline-start:22px}.g table td,.g table th{border:1px solid #ccc;padding:5px 8px}@media print{body{background:#fff}.g{padding:0;font-size:12px}button{display:none}}</style>
+<div class="g"><h1>دليل الكاشير: بطاقة ولاء لاس</h1><p>قل للعميل: <b>«عندك بطاقة لاس؟ عطني رقمك»</b></p>
+<h2>إضافة ختم</h2><ol><li>اكتب رقم الجوال، أو اضغط «مسح بطاقة العميل».</li><li>تأكد من اسم العميل.</li><li>اكتب مبلغ الفاتورة واضغط «إضافة ختم».</li><li>انتظر المربع الأخضر.</li></ol>
+<h2>عميل جديد</h2><ul><li>اكتب رقمه، ثم اسمه والمبلغ، واضغط «سجّل وأضف الختم».</li></ul>
+<h2>المشروب المجاني</h2><ul><li>بعد 5 أختام يصير المشروب التالي مجاني.</li><li>اطلب <b>آخر 4 أرقام</b> من جواله، ثم «استبدال المشروب المجاني».</li></ul>
+<h2>القواعد</h2><ul><li>فاتورة 10 ريال أو أكثر = كوب واحد، مهما كان عدد المشروبات.</li><li>كل ريال = نقطة.</li><li>أقل من 10 ريال: لا ختم ولا نقاط.</li><li><b>طلب واحد = إدخال واحد.</b> لا تقسّم الفاتورة.</li></ul>
+<h2>إذا حصلت مشكلة</h2><table><tr><th>المشكلة</th><th>الحل</th></tr>
+<tr><td>غلطت في الرقم أو المبلغ</td><td>«آخر عملياتك» ← «تراجع» خلال 5 دقائق</td></tr>
+<tr><td>مضت 5 دقائق، أو غلط في المشروب المجاني</td><td>بلّغ المدير</td></tr>
+<tr><td>العميل غيّر رقمه</td><td>بلّغ المدير</td></tr>
+<tr><td>عميل بدون اسم</td><td>اسأله واكتب اسمه واضغط «حفظ الاسم»</td></tr>
+<tr><td>ما فيه إنترنت</td><td>سجّل الرقم والمبلغ والوقت في ورقة، وأدخلها لاحقًا</td></tr></table>
+<h2>أول الشفت وآخره</h2><ul><li>ادخل باسمك ورقمك السري، ولا تشاركه.</li><li>اضغط «خروج» إذا انتهى دوامك.</li></ul>
+<p><button class="pri" onclick="print()">طباعة</button></p></div></body></html>`;
+}
+
 function adminPage() {
   return head('لوحة الإدارة · لاس') + `<header class="top">${LOGO}<b>لوحة الإدارة</b><button id="out" class="hide">خروج</button></header><div class="wrap wide">
 <div id="login" class="box hide" style="max-width:420px;margin:auto"><h2>دخول المدير</h2><label>اسم المستخدم</label><input id="u" value="admin" class="ltr"><label>كلمة المرور</label><input id="p" type="password" class="num"><button class="pri" id="lg">دخول</button><div id="lerr" class="msg err hide"></div></div>
@@ -619,6 +715,10 @@ function adminPage() {
  <div class="box"><label style="margin:0 0 4px">الفرع</label><select id="br"></select></div>
  <div class="grid" id="stats"></div>
  <div class="box" style="margin-top:12px"><h2>أفضل العملاء</h2><div class="scroll"><table id="top"></table></div></div>
+ <div class="box"><h2>تصحيح بيانات عميل</h2>
+  <label>جوال العميل</label><div style="display:flex;gap:6px"><input id="cq" class="num" inputmode="numeric" placeholder="05XXXXXXXX"><button class="pri" id="cfind" style="width:auto;margin:0;padding:0 18px">بحث</button></div>
+  <div id="cedit" class="hide"><label>الاسم</label><input id="en"><label>الجوال</label><input id="eph" class="num" inputmode="numeric"><label>الأكواب</label><input id="ecu" class="num" inputmode="numeric"><label>النقاط</label><input id="ept" class="num" inputmode="numeric"><label>سبب التعديل (إلزامي)</label><input id="ere" placeholder="مثال: ختم انضاف لرقم غلط"><button class="pri alt" id="esave">حفظ التعديل</button></div>
+  <div id="cmsg" class="msg hide"></div></div>
  <div class="box"><h2>آخر النشاطات</h2><div class="scroll"><table id="rec"></table></div></div>
  <div class="box"><h2>الموظفون</h2><div class="scroll"><table id="stf"></table></div>
   <label>اسم موظف جديد</label><input id="sn"><label>الفرع</label><select id="sb"></select><label>الرقم السري (4-8 أرقام)</label><input id="sp" class="num" inputmode="numeric"><button class="pri" id="sa">إضافة موظف</button><div id="smsg" class="msg hide"></div></div>
@@ -626,7 +726,7 @@ function adminPage() {
  <div class="box"><h2>نسخة احتياطية (Excel / CSV)</h2><p style="margin:0"><a href="/api/admin/export?what=customers">تنزيل العملاء</a> · <a href="/api/admin/export?what=transactions">تنزيل السجل</a></p></div>
  <div class="box" style="text-align:center"><h2>QR الطاولة (صفحة البطاقة)</h2><div class="qr" style="width:170px;margin:auto;background:#fff;padding:10px;border:1px solid var(--line);border-radius:10px" id="tq"></div><small class="ltr" id="tu"></small></div>
 </div></div>${QR_LIB}<script>${CUP_JS}
-var LBL={name:'إضافة اسم',import:'من بونات',register:'تسجيل',stamp:'ختم',visit:'زيارة (بدون كوب)',redeem:'استبدال',redeem_failed:'محاولة استبدال فاشلة'};
+var LBL={undo:'تراجع',adjust:'تعديل مدير',name:'إضافة اسم',import:'من بونات',register:'تسجيل',stamp:'ختم',visit:'زيارة (بدون كوب)',redeem:'استبدال',redeem_failed:'محاولة استبدال فاشلة'};
 function fmt(ms){return new Date(ms).toLocaleString('ar-SA',{timeZone:'Asia/Riyadh',dateStyle:'short',timeStyle:'short'})}
 var SL={min_amount:'الحد الأدنى للفاتورة (ريال)',points_per_riyal:'نقاط لكل ريال',stamp_cooldown_hours:'ساعات بين الأختام (0 = بدون حد)',points_redemption:'قاعدة استبدال النقاط (JSON)',wallet_apple_url:'رابط Apple Wallet',wallet_google_url:'رابط Google Wallet'};
 async function load(){
@@ -636,7 +736,7 @@ async function load(){
  if(!$('br').options.length){$('br').innerHTML='<option value="">كل الفروع</option>'+d.branches.map(function(x){return '<option value="'+x.id+'">'+esc(x.name)+'</option>'}).join('');$('br').value=b;$('sb').innerHTML=d.branches.map(function(x){return '<option value="'+x.id+'">'+esc(x.name)+'</option>'}).join('')}
  $('stats').innerHTML=[['إجمالي العملاء',d.customers],['زيارات اليوم',d.visits_today],['أختام اليوم',d.stamps_today],['استبدالات اليوم',d.redeems_today]].map(function(x){return '<div class="stat"><b>'+x[1]+'</b>'+x[0]+'</div>'}).join('');
  $('top').innerHTML='<tr><th>العميل</th><th>الجوال</th><th>الزيارات</th><th>الإنفاق</th><th>الأكواب</th><th>النقاط</th></tr>'+d.top.map(function(r){return '<tr><td>'+esc(r.name)+'</td><td class="ltr">'+esc(r.phone)+'</td><td>'+r.visits+'</td><td>'+(r.spent||0)+'</td><td>'+r.cups+'</td><td>'+r.points+'</td></tr>'}).join('');
- $('rec').innerHTML='<tr><th>الوقت</th><th>النوع</th><th>العميل</th><th>المبلغ</th><th>الموظف</th><th>الفرع</th></tr>'+d.recent.map(function(r){return '<tr><td>'+fmt(r.created_at)+'</td><td><span class="tag">'+(LBL[r.type]||r.type)+'</span></td><td>'+esc(r.customer)+'</td><td>'+(r.amount==null?'':r.amount)+'</td><td>'+esc(r.staff_name)+'</td><td>'+esc(r.branch_name||'')+'</td></tr>'}).join('');
+ $('rec').innerHTML='<tr><th>الوقت</th><th>النوع</th><th>العميل</th><th>المبلغ</th><th>الموظف</th><th>الفرع</th><th>ملاحظة</th></tr>'+d.recent.map(function(r){return '<tr><td>'+fmt(r.created_at)+'</td><td><span class="tag">'+(LBL[r.type]||r.type)+'</span></td><td>'+esc(r.customer)+'</td><td>'+(r.amount==null?'':r.amount)+'</td><td>'+esc(r.staff_name)+'</td><td>'+esc(r.branch_name||'')+'</td><td>'+esc(r.note||'')+'</td></tr>'}).join('');
  $('stf').innerHTML='<tr><th>الموظف</th><th>الفرع</th><th>الحالة</th><th></th></tr>'+d.staff.map(function(s){return '<tr><td>'+esc(s.name)+'</td><td>'+esc(s.branch_name)+'</td><td>'+(s.active?'فعال':'موقوف')+'</td><td><a href="#" data-id="'+s.id+'" class="tg">'+(s.active?'إيقاف':'تفعيل')+'</a></td></tr>'}).join('');
  document.querySelectorAll('.tg').forEach(function(a){a.onclick=async function(e){e.preventDefault();await post('/api/admin/staff/toggle',{id:a.dataset.id});load()}});
  $('set').innerHTML=Object.keys(d.settings).map(function(k){return '<label>'+SL[k]+'</label><div style="display:flex;gap:6px"><input class="ltr" data-k="'+k+'" value="'+esc(d.settings[k])+'"><button class="pri sv" style="width:auto;margin:0;padding:0 16px">حفظ</button></div>'}).join('');
@@ -644,6 +744,14 @@ async function load(){
  var u=location.origin+'/card';$('tq').innerHTML=qrSvg(u);$('tu').textContent=u;
 }
 $('br').onchange=load;
+var editId=null;
+function cmsg(t,ok){var m=$('cmsg');m.textContent=t||'';m.className='msg '+(ok?'ok':'err')+(t?'':' hide')}
+async function findCust(){cmsg('');$('cedit').classList.add('hide');editId=null;
+ try{var c=await call('/api/admin/customer?q='+encodeURIComponent($('cq').value));editId=c.id;$('en').value=c.name;$('eph').value=c.phone;$('ecu').value=c.cups;$('ept').value=c.points;$('ere').value='';$('cedit').classList.remove('hide')}catch(e){cmsg(e.message)}}
+$('cfind').onclick=findCust;$('cq').onkeydown=function(e){if(e.key==='Enter')findCust()};
+$('cq').oninput=function(){editId=null;$('cedit').classList.add('hide');cmsg('')};
+$('esave').onclick=async function(){if(!editId||!confirm('حفظ التعديل على بيانات العميل؟'))return;
+ try{await post('/api/admin/adjust',{id:editId,name:$('en').value,phone:$('eph').value,cups:Number($('ecu').value),points:Number($('ept').value),reason:$('ere').value});$('cedit').classList.add('hide');editId=null;cmsg('تم حفظ التعديل ✔',true);load()}catch(e){cmsg(e.message)}};
 $('lg').onclick=async function(){try{await post('/api/login',{username:$('u').value,pin:$('p').value});load()}catch(e){$('lerr').textContent=e.message;$('lerr').classList.remove('hide')}};
 $('out').onclick=async function(){await post('/api/logout',{});location.reload()};
 $('sa').onclick=async function(){var m=$('smsg');try{await post('/api/admin/staff',{name:$('sn').value,pin:$('sp').value,branch_id:$('sb').value});m.className='msg ok';m.textContent='تمت الإضافة';$('sn').value=$('sp').value='';load()}catch(e){m.className='msg err';m.textContent=e.message}};
