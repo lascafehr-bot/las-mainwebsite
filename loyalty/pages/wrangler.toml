@@ -4,7 +4,7 @@ pages_build_output_dir = "dist"
 compatibility_date = "2025-01-01"
 
 [vars]
-GOOGLE_WALLET_ISSUER_ID = ""
+GOOGLE_WALLET_ISSUER_ID = "3388000000023253665"
 # Secrets (set per project): ADMIN_PASSWORD, and later GOOGLE_SERVICE_ACCOUNT.
 
 [[d1_databases]]
