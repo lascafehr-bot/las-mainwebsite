@@ -10,7 +10,7 @@ const DEFAULTS = {
   min_amount: '10',
   cups_per_reward: '5',
   points_per_riyal: '1',
-  stamp_cooldown_hours: '3',
+  stamp_cooldown_hours: '0', // 0 = no waiting time between stamps
   points_redemption: '{"enabled":false,"points_needed":null,"value_sar":null}',
   wallet_apple_url: '',
   wallet_google_url: '',
@@ -255,7 +255,8 @@ async function api(req, env, url, ctx) {
   if (path === '/api/customer' && method === 'GET') {
     const c = await findCustomer(env, url.searchParams.get('q'));
     if (!c) return fail('غير مسجل', 404);
-    return json({ ...cardView(c, await getSettings(env)), phone: maskPhone(c.phone) });
+    const cfg = await getSettings(env);
+    return json({ ...cardView(c, cfg), phone: maskPhone(c.phone), min_amount: cfg.minAmount, points_per_riyal: cfg.perRiyal });
   }
 
   if (path === '/api/register' && method === 'POST') {
@@ -302,6 +303,7 @@ async function api(req, env, url, ctx) {
     const up = await env.DB.prepare('UPDATE customers SET cups = cups + 1, points = points + ?, last_stamp_at = ? WHERE id = ? AND cups < ? AND (last_stamp_at IS NULL OR last_stamp_at <= ?)')
       .bind(earned, now, c.id, cfg.cups, now - cfg.cooldownMs).run();
     if (up.meta.changes === 0) {
+      if (!cfg.cooldownMs) return fail('البطاقة مكتملة، يجب استبدال المشروب المجاني أولاً', 409);
       const wait = Math.max(1, Math.ceil((c.last_stamp_at + cfg.cooldownMs - now) / 60000));
       return fail('تم إضافة ختم لهذا العميل مؤخرًا. المتبقي ' + wait + ' دقيقة', 429, { wait_minutes: wait });
     }
@@ -528,35 +530,64 @@ if(location.pathname.indexOf('/c/')===0){$('lookup').classList.add('hide');find(
 }
 
 function staffPage() {
-  return head('الكاشير · لاس') + `<header class="top">${LOGO}<b id="who">الكاشير</b><button id="out" class="hide">خروج</button></header><div class="wrap">
+  return head('الكاشير · لاس') + `<style>.big{font-size:1.5rem;padding:14px}#q{font-size:1.7rem;letter-spacing:1px}.done{background:var(--ok);color:#fff;border-radius:14px;padding:18px;text-align:center;margin-bottom:12px}.done b{display:block;font-size:1.6rem}.done span{display:block;font-size:1.1rem;margin-top:4px}.done.gold{background:var(--copper)}.done.hide{display:none}.pv{color:var(--mut);margin:6px 0 0;min-height:1.5em}</style>
+<header class="top">${LOGO}<b id="who">الكاشير</b><button id="out" class="hide">خروج</button></header><div class="wrap">
 <div id="login" class="box hide"><h2>تسجيل دخول الموظف</h2><label>اسم الموظف</label><input id="u" autocomplete="username"><label>الرقم السري</label><input id="p" type="password" class="num" inputmode="numeric" autocomplete="current-password"><button class="pri" id="lg">دخول</button><div id="lerr" class="msg err hide"></div></div>
 <div id="app" class="hide">
- <div class="box"><h2>بحث عن عميل</h2><label>رقم الجوال (أو رمز البطاقة LAS-…)</label><input id="q" class="num" inputmode="tel" placeholder="05XXXXXXXX"><button class="pri" id="find">بحث</button></div>
- <div id="msg" class="msg hide"></div>
- <div id="reg" class="box hide"><h2>عميل جديد: تسجيل</h2><label>الاسم</label><input id="rn"><label>الجوال</label><input id="rp" class="num" readonly><button class="pri alt" id="rg">تسجيل العميل</button></div>
+ <div id="done" class="done hide" role="status"></div>
+ <div class="box"><label style="margin-top:0">جوال العميل (أو امسح بطاقته)</label><input id="q" class="num" inputmode="numeric" placeholder="05XXXXXXXX" autocomplete="off"></div>
+ <div id="msg" class="msg hide" role="alert"></div>
+ <div id="reg" class="box hide"><h2>عميل جديد</h2><label>الاسم</label><input id="rn" class="big" autocomplete="off"><label>مبلغ الفاتورة (ريال)</label><input id="ra" class="num big" inputmode="decimal" autocomplete="off"><button class="pri alt big" id="rg">سجّل وأضف الختم</button></div>
  <div id="cust" class="box hide"></div>
 </div></div><script>${CUP_JS}
-var cur=null;
+var cur=null,busy=false,seq=0,pending=false,newPhone='';
 function msg(t,ok){var m=$('msg');m.textContent=t||'';m.className='msg '+(ok?'ok':'err')+(t?'':' hide')}
+function digits(s){return String(s).replace(/[٠-٩]/g,function(c){return c.charCodeAt(0)-1632}).replace(/[\\s-]/g,'')}
+function amt(s){return digits(s).replace(/[٫,]/g,'.')}
+function complete(s){return /^(05\\d{8}|5\\d{8}|(\\+|00)?9665\\d{8}|LAS-[A-Z0-9]{8})$/i.test(s)}
+function clearPanels(){cur=null;$('cust').classList.add('hide');$('cust').innerHTML='';$('reg').classList.add('hide')}
+function banner(title,sub,gold){var d=$('done');d.innerHTML='<b>'+esc(title)+'</b><span>'+esc(sub)+'</span>';d.className='done'+(gold?' gold':'')}
+function hideBanner(){$('done').className='done hide'}
+function next(){seq++;clearPanels();$('q').value='';$('q').focus()}
+function bigOk(a){return Number(a)<=500||confirm('المبلغ '+a+' ريال، هل هو صحيح؟')}
 async function boot(){try{var me=await call('/api/me');if(me.role!=='cashier'){location.href='/admin';return}
- $('who').textContent=me.name+' · فرع '+me.branch_name;$('out').classList.remove('hide');$('app').classList.remove('hide');$('login').classList.add('hide')}
- catch(e){$('login').classList.remove('hide')}}
-$('lg').onclick=async function(){try{await post('/api/login',{username:$('u').value,pin:$('p').value});boot()}catch(e){$('lerr').textContent=e.message;$('lerr').classList.remove('hide')}};
-$('out').onclick=async function(){await post('/api/logout',{});location.reload()};
-function render(c){cur=c;var h='<div class="who"><b>'+esc(c.name)+'</b><span class="tag">'+esc(c.phone)+'</span></div><div class="cups" style="filter:none">'+cupsHtml(c.cups,c.cups_per_reward)+'</div>'
- +'<p style="margin:0 0 8px">الأكواب <b>'+c.cups+'/'+c.cups_per_reward+'</b> · النقاط <b>'+c.points+'</b></p>';
- if(c.free_drinks){h+='<div class="msg ok">🎉 البطاقة مكتملة: المشروب التالي مجاني</div><label>اطلب من العميل آخر 4 أرقام من جواله</label><input id="l4" class="num" inputmode="numeric" maxlength="4"><button class="pri alt" id="rd">استبدال المشروب المجاني</button>'}
- else{h+='<label>مبلغ الفاتورة (ريال)</label><input id="am" class="num" inputmode="decimal" placeholder="0.00"><button class="pri" id="st">إضافة ختم</button>'}
- if(c.name==='عميل')h='<div class="msg err">العميل بدون اسم، اسأله عن اسمه</div><input id="nn" placeholder="اسم العميل"><button class="pri alt" id="sn">حفظ الاسم</button>'+h;
+ $('who').textContent=me.name+' · فرع '+me.branch_name;$('out').classList.remove('hide');$('app').classList.remove('hide');$('login').classList.add('hide');$('q').focus()}
+ catch(e){$('app').classList.add('hide');$('out').classList.add('hide');$('login').classList.remove('hide')}}
+function fail(e){if(e.status===401){boot();return}msg(e.message)}
+async function lookup(){var s=digits($('q').value);if(!s)return;var my=++seq;clearPanels();pending=true;
+ try{var c=await call('/api/customer?q='+encodeURIComponent(s));if(my===seq)render(c)}
+ catch(e){if(my!==seq)return;if(e.status!==404)fail(e);else if(/^las-/i.test(s))msg('رمز البطاقة غير معروف');else if(complete(s)){newPhone=s;$('rn').value='';$('ra').value='';$('reg').classList.remove('hide');$('rn').focus()}else msg('رقم الجوال غير صحيح')}
+ finally{if(my===seq)pending=false}}
+function render(c){cur=c;
+ var h='<div class="who"><b>'+esc(c.name)+'</b><span class="tag ltr">'+esc(c.phone)+'</span></div><div class="cups">'+cupsHtml(c.cups,c.cups_per_reward)+'</div>'
+ +'<p style="margin:0 0 8px">الأختام <b>'+c.cups+' / '+c.cups_per_reward+'</b> · النقاط <b>'+c.points+'</b></p>';
+ if(c.name==='عميل')h+='<div class="msg err">العميل بدون اسم، اسأله عن اسمه</div><input id="nn" placeholder="اسم العميل" autocomplete="off"><button class="pri alt" id="sn">حفظ الاسم</button>';
+ if(c.free_drinks)h+='<div class="msg ok">🎉 المشروب التالي مجاني</div><label>آخر 4 أرقام من جوال العميل</label><input id="l4" class="num big" inputmode="numeric" maxlength="4" autocomplete="off"><button class="pri alt big" id="rd">استبدال المشروب المجاني</button>';
+ else h+='<label>مبلغ الفاتورة (ريال)</label><input id="am" class="num big" inputmode="decimal" autocomplete="off"><p class="pv" id="pv"></p><button class="pri big" id="st">إضافة ختم</button>';
  $('cust').innerHTML=h;$('cust').classList.remove('hide');$('reg').classList.add('hide');
- if($('sn'))$('sn').onclick=async function(){try{render(await post('/api/set-name',{phone:$('q').value,name:$('nn').value}));msg('تم حفظ الاسم ✔',true)}catch(e){msg(e.message)}};
- if($('st'))$('st').onclick=stamp;if($('rd'))$('rd').onclick=redeem}
-async function lookup(){msg('');var q=$('q').value.trim();$('cust').classList.add('hide');$('reg').classList.add('hide');
- try{render(await call('/api/customer?q='+encodeURIComponent(q)))}catch(e){if(e.status===404){$('rp').value=q;$('rn').value='';$('reg').classList.remove('hide');msg('العميل غير مسجل، سجله الآن',true)}else msg(e.message)}}
-async function stamp(){$('st').disabled=true;try{var r=await post('/api/stamp',{phone:$('q').value,amount:$('am').value});msg(r.stamped?(r.reward_earned?'تمت إضافة الختم 🎉 اكتملت البطاقة':'تمت إضافة الختم ✔'):r.message,true);render(r.card)}catch(e){msg(e.message);if($('st'))$('st').disabled=false}}
-async function redeem(){try{var r=await post('/api/redeem',{phone:$('q').value,last4:$('l4').value});msg('تم استبدال المشروب المجاني، البطاقة بدأت من جديد ✔',true);render(r.card)}catch(e){msg(e.message)}}
-$('rg').onclick=async function(){try{await post('/api/register',{name:$('rn').value,phone:$('rp').value});msg('تم تسجيل العميل ✔',true);lookup()}catch(e){msg(e.message)}};
-$('find').onclick=lookup;$('q').onkeydown=function(e){if(e.key==='Enter')lookup()};
+ if($('sn')){$('sn').onclick=saveName;$('nn').onkeydown=function(e){if(e.key==='Enter')saveName()}}
+ if($('st')){$('st').onclick=stamp;$('am').onkeydown=function(e){if(e.key==='Enter')stamp()};$('am').oninput=preview;$('am').focus()}
+ if($('rd')){$('rd').onclick=redeem;$('l4').onkeydown=function(e){if(e.key==='Enter')redeem()};$('l4').focus()}}
+function preview(){var a=Number(amt($('am').value));$('pv').textContent=!(a>0)?'':a<cur.min_amount?'أقل من '+cur.min_amount+' ريال: لا ختم ولا نقاط':'+'+Math.floor(a*cur.points_per_riyal)+' نقطة وختم واحد'}
+async function saveName(){if(busy||!cur)return;busy=true;try{var c=await post('/api/set-name',{phone:cur.card_code,name:$('nn').value});c.min_amount=cur.min_amount;c.points_per_riyal=cur.points_per_riyal;render(c);msg('تم حفظ الاسم ✔',true)}catch(e){fail(e)}busy=false}
+function stamped(before,r){if(!r.stamped){msg(r.message);return false}
+ banner(r.card.name+' ✔','الأختام '+r.card.cups+' / '+r.card.cups_per_reward+' · +'+(r.card.points-before)+' نقطة'+(r.reward_earned?' · المشروب القادم مجاني 🎉':''),r.reward_earned);next();msg('');return true}
+async function stamp(){if(busy||!cur)return;var a=amt($('am').value),c=cur;if(!(Number(a)>0)){msg('أدخل مبلغ الفاتورة');return}if(!bigOk(a))return;
+ busy=true;$('st').disabled=true;try{stamped(c.points,await post('/api/stamp',{phone:c.card_code,amount:a}))}catch(e){fail(e)}busy=false;if($('st'))$('st').disabled=false}
+async function redeem(){if(busy||!cur)return;busy=true;try{var r=await post('/api/redeem',{phone:cur.card_code,last4:digits($('l4').value)});banner(r.card.name+' ✔','تم المشروب المجاني، البطاقة بدأت من جديد',true);next();msg('')}catch(e){fail(e)}busy=false}
+async function register(){if(busy)return;var name=$('rn').value.trim(),a=amt($('ra').value),phone=newPhone;
+ if(name.length<2){msg('اكتب اسم العميل');$('rn').focus();return}if(a&&!(Number(a)>0)){msg('المبلغ غير صحيح');return}if(a&&!bigOk(a))return;
+ busy=true;$('rg').disabled=true;
+ try{await post('/api/register',{name:name,phone:phone});
+  try{if(!a){banner(name+' ✔','تم التسجيل');next();msg('')}else{var r=await post('/api/stamp',{phone:phone,amount:a});if(!stamped(0,r)){await lookup();msg('تم التسجيل. '+r.message)}}}
+  catch(e){await lookup();msg('تم التسجيل لكن الختم لم يُضف: '+e.message)}}
+ catch(e){fail(e)}busy=false;$('rg').disabled=false}
+$('q').oninput=function(){msg('');seq++;pending=false;clearPanels();var s=digits($('q').value);if(s)hideBanner();if(complete(s))lookup()};
+$('q').onkeydown=function(e){if(e.key!=='Enter')return;if(cur){var f=$('am')||$('l4');if(f)f.focus()}else if(!pending)lookup()};
+$('rg').onclick=register;$('ra').onkeydown=function(e){if(e.key==='Enter')register()};$('rn').onkeydown=function(e){if(e.key==='Enter')$('ra').focus()};
+$('lg').onclick=async function(){try{await post('/api/login',{username:$('u').value,pin:$('p').value});$('p').value='';$('lerr').classList.add('hide');boot()}catch(e){$('lerr').textContent=e.message;$('lerr').classList.remove('hide')}};
+$('p').onkeydown=function(e){if(e.key==='Enter')$('lg').click()};
+$('out').onclick=async function(){await post('/api/logout',{});location.reload()};
 boot();
 </script></body></html>`;
 }
@@ -577,7 +608,7 @@ function adminPage() {
 </div></div>${QR_LIB}<script>${CUP_JS}
 var LBL={name:'إضافة اسم',import:'من بونات',register:'تسجيل',stamp:'ختم',visit:'زيارة (بدون كوب)',redeem:'استبدال',redeem_failed:'محاولة استبدال فاشلة'};
 function fmt(ms){return new Date(ms).toLocaleString('ar-SA',{timeZone:'Asia/Riyadh',dateStyle:'short',timeStyle:'short'})}
-var SL={min_amount:'الحد الأدنى للفاتورة (ريال)',points_per_riyal:'نقاط لكل ريال',stamp_cooldown_hours:'ساعات بين الأختام',points_redemption:'قاعدة استبدال النقاط (JSON)',wallet_apple_url:'رابط Apple Wallet',wallet_google_url:'رابط Google Wallet'};
+var SL={min_amount:'الحد الأدنى للفاتورة (ريال)',points_per_riyal:'نقاط لكل ريال',stamp_cooldown_hours:'ساعات بين الأختام (0 = بدون حد)',points_redemption:'قاعدة استبدال النقاط (JSON)',wallet_apple_url:'رابط Apple Wallet',wallet_google_url:'رابط Google Wallet'};
 async function load(){
  var b=$('br').value;var d;
  try{d=await call('/api/admin/stats'+(b?'?branch='+b:''))}catch(e){$('login').classList.remove('hide');$('app').classList.add('hide');return}

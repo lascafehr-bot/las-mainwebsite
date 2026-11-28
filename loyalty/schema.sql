@@ -73,7 +73,7 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
   ('min_amount',           '10'),   -- SAR needed for a cup + points
   ('cups_per_reward',      '5'),    -- cups to fill the card (next drink is free)
   ('points_per_riyal',     '1'),    -- points earned per riyal on a qualifying bill
-  ('stamp_cooldown_hours', '3'),    -- max 1 stamp per customer in this window
+  ('stamp_cooldown_hours', '0'),    -- hours between stamps; 0 = no limit
   -- Points redemption is not decided yet. When it is, edit this one value:
   ('points_redemption',    '{"enabled":false,"points_needed":null,"value_sar":null}'),
   ('wallet_apple_url',     ''),
